@@ -1,0 +1,255 @@
+---
+title: SDK Reference
+description: Complete TypeScript SDK reference for the Veil invisible wallet.
+---
+
+import { Callout } from 'nextra/components'
+
+# SDK Reference
+
+The `invisible-wallet-sdk` is a TypeScript package providing a React hook and utility functions for integrating Veil into web applications.
+
+**Package:** `invisible-wallet-sdk`
+**Source:** `sdk/src/`
+**Entry:** `dist/index.js` / `dist/index.d.ts`
+
+---
+
+## Installation
+
+```bash
+npm install invisible-wallet-sdk stellar-sdk
+```
+
+---
+
+## `useInvisibleWallet`
+
+The primary React hook. Manages wallet state and exposes register/sign/login methods.
+
+```typescript
+import { useInvisibleWallet } from 'invisible-wallet-sdk'
+
+const wallet = useInvisibleWallet(factoryAddress: string)
+```
+
+### Parameters
+
+| Name | Type | Description |
+|---|---|---|
+| `factoryAddress` | `string` | Soroban factory contract address (Strkey format). Used in Phase 3+ for wallet deployment. |
+
+### Return value — `InvisibleWallet`
+
+```typescript
+interface InvisibleWallet {
+  // State
+  address:   string | null   // Wallet contract address, null if not registered
+  isPending: boolean          // true while any async operation is in flight
+  error:     string | null   // Last error message
+
+  // Methods
+  register(username: string): Promise<void>
+  signAuthEntry(signaturePayload: Uint8Array): Promise<WebAuthnSignature | null>
+  login(): Promise<void>
+}
+```
+
+---
+
+### `register(username)`
+
+Creates a new passkey credential and initializes the wallet.
+
+```typescript
+await wallet.register('alice')
+```
+
+**Flow:**
+1. Calls `navigator.credentials.create()` with `alg: -7` (ES256/P-256)
+2. Extracts the 65-byte uncompressed public key via `extractP256PublicKey()`
+3. *(Phase 3)* Deploys wallet via factory contract using the public key
+4. Stores `wallet_address`, `key_id`, and `public_key` in `localStorage`
+
+**Throws** if WebAuthn is not supported or the user cancels.
+
+<Callout type="info">
+The challenge used during registration is a random 32-byte nonce — it is **not** a Soroban payload. Only `signAuthEntry` uses the actual payload as the challenge.
+</Callout>
+
+---
+
+### `signAuthEntry(signaturePayload)`
+
+Signs a Soroban authorization entry using the device biometric.
+
+```typescript
+const sig: WebAuthnSignature | null = await wallet.signAuthEntry(payload)
+```
+
+**Parameters**
+
+| Name | Type | Description |
+|---|---|---|
+| `signaturePayload` | `Uint8Array` | 32-byte Soroban `HashIdPreimage` (the auth entry hash) |
+
+**Returns** `WebAuthnSignature | null` — null if the user cancels or no credential is found.
+
+**Flow:**
+1. Calls `navigator.credentials.get()` with `challenge = signaturePayload`
+2. The device prompts the user for biometric/PIN verification
+3. Extracts `authData` and `clientDataJSON` from the assertion response
+4. Converts DER-encoded signature to raw 64-byte format via `derToRawSignature()`
+5. Returns the full `WebAuthnSignature` bundle
+
+**Encoding for `__check_auth`:**
+```typescript
+// Encode as Vec<Val>[4] using stellar-sdk XDR
+const sigVec = [
+  xdr.ScVal.scvBytes(sig.publicKey),
+  xdr.ScVal.scvBytes(sig.authData),
+  xdr.ScVal.scvBytes(sig.clientDataJSON),
+  xdr.ScVal.scvBytes(sig.signature),
+]
+```
+
+---
+
+### `login()`
+
+Restores a wallet session from `localStorage`. Does **not** trigger a biometric prompt.
+
+```typescript
+await wallet.login()
+// wallet.address is now set if a previous session exists
+```
+
+---
+
+## `WebAuthnSignature` type
+
+```typescript
+interface WebAuthnSignature {
+  publicKey:     Uint8Array  // 65 bytes: 0x04 || x (32B) || y (32B)
+  authData:      Uint8Array  // WebAuthn authenticatorData (variable length)
+  clientDataJSON: Uint8Array // UTF-8 JSON containing base64url(challenge)
+  signature:     Uint8Array  // 64 bytes: r (32B) || s (32B)
+}
+```
+
+---
+
+## Utility Functions (`utils.ts`)
+
+### `derToRawSignature(derSig: ArrayBuffer): Uint8Array`
+
+Converts a WebAuthn DER-encoded P-256 signature to the raw 64-byte `r || s` format expected by `__check_auth`.
+
+```typescript
+import { derToRawSignature } from 'invisible-wallet-sdk'
+
+const raw = derToRawSignature(assertion.response.signature)
+// Uint8Array(64)
+```
+
+DER format: `30 <len> 02 <rLen> <r> 02 <sLen> <s>`
+Output: `r (32B, zero-padded) || s (32B, zero-padded)`
+
+---
+
+### `extractP256PublicKey(response: AuthenticatorAttestationResponse): Promise<Uint8Array>`
+
+Extracts the 65-byte uncompressed P-256 public key from a WebAuthn attestation response.
+
+```typescript
+const pubkey = await extractP256PublicKey(credential.response)
+// Uint8Array(65): 0x04 || x || y
+```
+
+Uses `getPublicKey()` + SubtleCrypto `importKey` / `exportKey` — avoids manual CBOR/SPKI parsing. Requires Chrome 95+, Firefox 93+, Safari 16+.
+
+---
+
+### `sha256(data: Uint8Array): Promise<Uint8Array>`
+
+SHA-256 hash using the Web Crypto API.
+
+```typescript
+const hash = await sha256(new TextEncoder().encode('hello'))
+// Uint8Array(32)
+```
+
+---
+
+### `computeWebAuthnMessageHash(authData, clientDataJSON): Promise<Uint8Array>`
+
+Computes `SHA256(authData || SHA256(clientDataJSON))` — the exact message hash the authenticator signs over.
+
+```typescript
+const msgHash = await computeWebAuthnMessageHash(
+  assertion.response.authenticatorData,
+  assertion.response.clientDataJSON,
+)
+```
+
+---
+
+### `parseAuthData(authData: ArrayBuffer)`
+
+Parses the binary `authenticatorData` structure.
+
+```typescript
+const { rpIdHash, flags, signCount } = parseAuthData(authData)
+// rpIdHash: Uint8Array(32)
+// flags: { userPresent, userVerified, attestedCredData, extensionData }
+// signCount: number
+```
+
+---
+
+### `parseClientDataJSON(clientDataJSON: ArrayBuffer)`
+
+Decodes `clientDataJSON` and returns a typed object.
+
+```typescript
+const { type, challenge, origin } = parseClientDataJSON(clientDataJSON)
+// type: "webauthn.get" | "webauthn.create"
+// challenge: base64url string
+// origin: string
+```
+
+---
+
+### `base64UrlEncode(bytes: Uint8Array): string`
+
+Encodes bytes as base64url without padding.
+
+```typescript
+base64UrlEncode(new Uint8Array([1, 2, 3])) // "AQID"
+```
+
+---
+
+### `bufferToHex(input: Uint8Array | ArrayBuffer): string`
+
+```typescript
+bufferToHex(new Uint8Array([0xde, 0xad])) // "dead"
+```
+
+---
+
+### `hexToUint8Array(hex: string): Uint8Array`
+
+```typescript
+hexToUint8Array('deadbeef') // Uint8Array([0xde, 0xad, 0xbe, 0xef])
+```
+
+---
+
+### `encodeU64(num: bigint): Uint8Array`
+
+Encodes a `bigint` as an 8-byte big-endian buffer for XDR `u64` fields.
+
+```typescript
+encodeU64(1000n) // Uint8Array(8)
+```

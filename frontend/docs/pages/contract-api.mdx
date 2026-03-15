@@ -1,0 +1,215 @@
+---
+title: Contract API
+description: Complete reference for all Soroban smart contract functions and types.
+---
+
+import { Callout } from 'nextra/components'
+
+# Contract API
+
+The Veil smart contract (`invisible_wallet`) is a Soroban **custom account contract** that implements `__check_auth` for WebAuthn-based transaction authorization.
+
+**Contract crate:** `invisible-wallet v0.1.0`
+**Soroban SDK:** `v20.0.0`
+**Source:** `contracts/invisible_wallet/src/`
+
+---
+
+## Types
+
+### `WalletError`
+
+All public functions return `Result<_, WalletError>`. The variants map to Soroban error codes.
+
+```rust
+#[contracterror]
+pub enum WalletError {
+    AlreadyInitialized        = 1,
+    InvalidSignatureFormat    = 2,
+    SignerNotAuthorized        = 3,
+    InvalidPublicKey           = 4,
+    InvalidSignature           = 5,
+    SignatureVerificationFailed = 6,
+    InvalidChallenge           = 7,
+}
+```
+
+| Code | Variant | Trigger |
+|---|---|---|
+| 1 | `AlreadyInitialized` | `init()` called when a signer already exists |
+| 2 | `InvalidSignatureFormat` | `__check_auth` signature is not a `Vec<Val>` of length 4 |
+| 3 | `SignerNotAuthorized` | Provided public key is not stored in the contract |
+| 4 | `InvalidPublicKey` | Cannot parse the 65-byte SEC1 public key |
+| 5 | `InvalidSignature` | Cannot parse the 64-byte raw signature |
+| 6 | `SignatureVerificationFailed` | P-256 ECDSA verification failed |
+| 7 | `InvalidChallenge` | `base64url(signaturePayload)` not found in `clientDataJSON` |
+
+---
+
+## Functions
+
+### `init`
+
+Initialize the wallet with a P-256 public key. Can only be called once.
+
+```rust
+pub fn init(
+    env: Env,
+    initial_signer: BytesN<65>,
+) -> Result<(), WalletError>
+```
+
+**Parameters**
+
+| Name | Type | Description |
+|---|---|---|
+| `initial_signer` | `BytesN<65>` | Uncompressed P-256 public key: `0x04 \|\| x (32B) \|\| y (32B)` |
+
+**Errors**
+- `AlreadyInitialized` — a signer is already stored
+
+**Example (Stellar CLI)**
+```bash
+stellar contract invoke \
+  --id <CONTRACT_ID> \
+  --fn init \
+  -- \
+  --initial_signer <HEX_PUBKEY>
+```
+
+---
+
+### `add_signer`
+
+Add an additional authorized signer. Requires the contract's own authorization (i.e., an existing signer must sign the transaction).
+
+```rust
+pub fn add_signer(env: Env, new_signer: BytesN<65>)
+```
+
+**Requires:** `env.current_contract_address().require_auth()`
+
+**Parameters**
+
+| Name | Type | Description |
+|---|---|---|
+| `new_signer` | `BytesN<65>` | New uncompressed P-256 public key to authorize |
+
+---
+
+### `remove_signer`
+
+Remove an authorized signer. Requires contract self-authorization.
+
+```rust
+pub fn remove_signer(env: Env, signer: BytesN<65>)
+```
+
+**Requires:** `env.current_contract_address().require_auth()`
+
+<Callout type="warning">
+  Be careful not to remove the last signer — this will lock the contract permanently. Guardian recovery (Phase 5) will provide a safety net.
+</Callout>
+
+---
+
+### `set_guardian`
+
+Set a recovery/guardian key for account recovery (Phase 5).
+
+```rust
+pub fn set_guardian(env: Env, guardian: BytesN<65>)
+```
+
+**Requires:** `env.current_contract_address().require_auth()`
+
+---
+
+### `execute`
+
+Invoke a function on another contract after the wallet has authorized the call.
+
+```rust
+pub fn execute(
+    env: Env,
+    target: Address,
+    func: Symbol,
+    args: Vec<Val>,
+)
+```
+
+**Requires:** `env.current_contract_address().require_auth()`
+
+**Parameters**
+
+| Name | Type | Description |
+|---|---|---|
+| `target` | `Address` | The contract to call |
+| `func` | `Symbol` | Function name |
+| `args` | `Vec<Val>` | Arguments to pass |
+
+---
+
+### `__check_auth`
+
+Called automatically by the Soroban runtime for every transaction that requires this wallet's authorization. **Do not call directly.**
+
+```rust
+fn __check_auth(
+    env: Env,
+    signature_payload: BytesN<32>,
+    signature: Val,
+    _auth_contexts: Vec<Context>,
+) -> Result<(), WalletError>
+```
+
+**Signature format**
+
+The `signature` argument must be a `Vec<Val>` with exactly 4 elements:
+
+```
+[0]  BytesN<65>  — Uncompressed P-256 public key (0x04 || x || y)
+[1]  Bytes       — WebAuthn authenticatorData (variable length)
+[2]  Bytes       — WebAuthn clientDataJSON (must contain base64url(payload))
+[3]  BytesN<64>  — Raw ECDSA signature (r || s, 32B each)
+```
+
+**Verification steps (in order)**
+
+1. Decode `signature` as `Vec<Val>`, assert length = 4
+2. Extract and type-check each element
+3. Verify `has_signer(pub_key)` — reject unauthorized keys
+4. Call `auth::verify_webauthn(payload, pub_key, auth_data, client_data_json, sig)`
+   - `challenge_is_present`: find `base64url(payload)` in `clientDataJSON`
+   - Compute `SHA256(authData || SHA256(clientDataJSON))`
+   - Verify P-256 ECDSA signature using `p256::ecdsa::VerifyingKey::verify_prehash`
+
+---
+
+## Storage
+
+Defined in `storage.rs`:
+
+```rust
+pub fn add_signer(env: &Env, key: &BytesN<65>)
+pub fn remove_signer(env: &Env, key: &BytesN<65>)
+pub fn has_signer(env: &Env, key: &BytesN<65>) -> bool
+pub fn set_guardian(env: &Env, guardian_key: &BytesN<65>)
+pub fn get_guardian(env: &Env) -> Option<BytesN<65>>
+```
+
+| Function | Storage type | Key |
+|---|---|---|
+| `add/remove/has_signer` | Persistent | `DataKey::Signer(pubkey)` |
+| `set/get_guardian` | Instance | `DataKey::Guardian` |
+
+---
+
+## Cargo Dependencies
+
+```toml
+[dependencies]
+soroban-sdk = { version = "20.0.0", features = ["alloc"] }
+p256        = { version = "0.13", features = ["ecdsa", "sha2"] }
+sha2        = { version = "0.10", default-features = false }
+```

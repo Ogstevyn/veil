@@ -1,0 +1,140 @@
+---
+title: Getting Started
+description: Set up the Veil SDK and smart contract in your project.
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Getting Started
+
+This guide walks you through setting up the Veil smart contract and TypeScript SDK in a local development environment.
+
+## Prerequisites
+
+- [Rust](https://rustup.rs/) with `wasm32-unknown-unknown` target
+- [Stellar CLI](https://developers.stellar.org/docs/tools/developer-tools/stellar-cli)
+- Node.js 18+ and npm
+- A browser with WebAuthn support (Chrome 67+, Firefox 60+, Safari 14+)
+
+## Installation
+
+<Steps>
+
+### Install Rust WASM target
+
+```bash
+rustup target add wasm32-unknown-unknown
+```
+
+### Clone the repository
+
+```bash
+git clone https://github.com/stellar/invisible-wallet.git
+cd invisible_wallet
+```
+
+### Build the contract
+
+```bash
+cd contracts/invisible_wallet
+cargo build --target wasm32-unknown-unknown --release
+```
+
+Output: `target/wasm32-unknown-unknown/release/invisible_wallet.wasm`
+
+### Install the SDK
+
+```bash
+cd ../../sdk
+npm install
+npm run build
+```
+
+### Run contract unit tests
+
+```bash
+cd contracts/invisible_wallet
+cargo test
+```
+
+Expected output — 6 passing tests:
+
+```
+test test_init_registers_signer ... ok
+test test_init_twice_fails ... ok
+test test_verify_webauthn_valid ... ok
+test test_verify_webauthn_wrong_key_fails ... ok
+test test_verify_webauthn_wrong_challenge_fails ... ok
+test test_verify_webauthn_tampered_authdata_fails ... ok
+```
+
+</Steps>
+
+## SDK Usage
+
+### React — useInvisibleWallet hook
+
+```tsx
+import { useInvisibleWallet } from 'invisible-wallet-sdk'
+
+export default function WalletDemo() {
+  const { address, isPending, error, register, signAuthEntry, login } =
+    useInvisibleWallet('FACTORY_CONTRACT_ADDRESS')
+
+  return (
+    <div>
+      {address ? (
+        <p>Wallet: {address}</p>
+      ) : (
+        <button onClick={() => register('alice')} disabled={isPending}>
+          {isPending ? 'Creating...' : 'Create Wallet'}
+        </button>
+      )}
+    </div>
+  )
+}
+```
+
+### Signing a Soroban auth entry
+
+```tsx
+// signaturePayload is the 32-byte Soroban HashIdPreimage
+const sig = await signAuthEntry(signaturePayload)
+
+if (sig) {
+  // sig = { publicKey, authData, clientDataJSON, signature }
+  console.log('Public key:', sig.publicKey)
+  console.log('Signature (r||s):', sig.signature)
+}
+```
+
+<Callout type="info">
+`signAuthEntry` triggers a native biometric prompt on the user's device. The `signaturePayload` is used as the WebAuthn challenge, cryptographically binding the assertion to that specific transaction.
+</Callout>
+
+## Environment Setup
+
+### Local Stellar node
+
+```bash
+docker run --rm -it \
+  -p 8000:8000 \
+  --name stellar \
+  stellar/quickstart:latest \
+  --local \
+  --enable-soroban-rpc
+```
+
+RPC URL: `http://localhost:8000/soroban/rpc`
+
+### Testnet
+
+- RPC: `https://soroban-testnet.stellar.org`
+- Network passphrase: `Test SDF Network ; September 2015`
+- Friendbot: `https://friendbot.stellar.org/?addr=<your_address>`
+
+## Next Steps
+
+- [Architecture](/architecture) — understand the full WebAuthn verification pipeline
+- [Contract API](/contract-api) — all public contract functions and types
+- [SDK Reference](/sdk-reference) — complete SDK function signatures

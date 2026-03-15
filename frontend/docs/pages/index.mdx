@@ -1,0 +1,70 @@
+---
+title: Introduction
+description: Veil — a seedless, passkey-powered smart wallet on Stellar Soroban.
+---
+
+import { Callout, Cards, Card } from 'nextra/components'
+
+# Veil — Invisible Wallet
+
+**Veil** is a passkey-powered smart wallet built on [Stellar Soroban](https://soroban.stellar.org). It lets users register, authenticate, and authorize blockchain transactions using device biometrics — Face ID, fingerprint, or Windows Hello — with no seed phrases and no private key exposure.
+
+<Callout type="info">
+  Veil implements the [WebAuthn / FIDO2](https://webauthn.guide) standard and the **ES256 (P-256 ECDSA)** signature scheme. All cryptographic verification happens on-chain inside a Soroban custom account contract.
+</Callout>
+
+## Why Veil?
+
+| Traditional Wallet | Veil |
+|---|---|
+| 24-word seed phrase | Fingerprint / Face ID |
+| Private key file | Secure enclave (never exported) |
+| User must back up keys | Device + guardian recovery |
+| Complex multi-step UX | Single tap to authorize |
+| Centralized custody risk | Fully self-custodied, on-chain |
+
+## Core Concepts
+
+- **WebAuthn** — A W3C standard that lets browsers create and use P-256 key pairs stored in hardware secure enclaves.
+- **Soroban Custom Account** — A contract that implements `__check_auth`, called by the Soroban runtime for every transaction authorization.
+- **Challenge Binding** — The Soroban `signature_payload` (32 bytes) is used directly as the WebAuthn challenge, binding the biometric signature to the exact transaction.
+- **P-256 ECDSA** — The ES256 algorithm used by WebAuthn, verified on-chain using the `p256` Rust crate.
+
+## Project Structure
+
+```
+invisible_wallet/
+├── contracts/invisible_wallet/   # Rust/Soroban smart contract
+│   └── src/
+│       ├── lib.rs                # Entry points + __check_auth
+│       ├── auth.rs               # WebAuthn ES256 verification
+│       └── storage.rs            # Signer/guardian storage
+└── sdk/
+    └── src/
+        ├── useInvisibleWallet.ts # React hook
+        └── utils.ts              # Crypto utilities
+```
+
+## Quick Navigation
+
+<Cards>
+  <Card title="Getting Started" href="/getting-started" />
+  <Card title="Architecture"    href="/architecture" />
+  <Card title="Contract API"    href="/contract-api" />
+  <Card title="SDK Reference"   href="/sdk-reference" />
+  <Card title="Security"        href="/security" />
+</Cards>
+
+## Development Status
+
+| Phase | Status | Description |
+|---|---|---|
+| Phase 1 | Complete    | Contract, WalletError, 6 unit tests |
+| Phase 2 | Complete    | Full WebAuthn pipeline, DER to raw, key extraction |
+| Phase 3 | In Progress | Factory contract, deterministic deployment |
+| Phase 4 | Upcoming    | Testnet integration, end-to-end demo |
+| Phase 5 | Upcoming    | Guardian recovery, multi-signer, replay protection |
+
+<Callout type="warning">
+  Veil is under active development. The contract and SDK APIs may change before a stable 1.0 release. Do not use on Mainnet yet.
+</Callout>

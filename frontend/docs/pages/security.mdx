@@ -1,0 +1,139 @@
+---
+title: Security
+description: Security model, threat analysis, and cryptographic properties of Veil.
+---
+
+import { Callout } from 'nextra/components'
+
+# Security
+
+This page documents Veil's security model, the cryptographic guarantees it provides, known limitations, and responsible disclosure policy.
+
+<Callout type="warning">
+  Veil has not undergone a formal third-party security audit. Do **not** use on Stellar Mainnet until a full audit is complete.
+</Callout>
+
+---
+
+## Security Properties
+
+### 1. Private Key Non-Exportability
+
+The P-256 private key is generated inside the device's **hardware secure enclave** (Apple Secure Enclave, Android StrongBox, TPM 2.0, FIDO2 security key). The browser's WebAuthn API provides no mechanism to export it — the key cannot be read by JavaScript, extensions, malware, or even the OS kernel.
+
+**What this means:** Even if your application is fully compromised, an attacker cannot steal the signing key.
+
+### 2. Challenge Binding (Transaction Binding)
+
+Every WebAuthn assertion embeds `base64url(challenge)` into `clientDataJSON`, which is signed by the authenticator. Veil uses the **Soroban `signature_payload`** (a 32-byte hash of the authorization entry) as the WebAuthn challenge.
+
+The contract verifies:
+```rust
+challenge_is_present(&client_data_json, &base64url_encode_32(&signature_payload))
+```
+
+**What this means:** A WebAuthn signature obtained for transaction A cannot be replayed for transaction B — they have different `signature_payload` values, so the challenge check fails.
+
+### 3. On-Chain Verification — No Trusted Third Parties
+
+All cryptographic verification happens inside the Soroban VM:
+- Challenge substring search in `clientDataJSON`
+- `SHA256(authData || SHA256(clientDataJSON))` message hash
+- P-256 ECDSA `verify_prehash` using the `p256` crate
+
+There are no oracles, off-chain verifiers, or trusted relayers. The verification is fully deterministic and auditable by any node.
+
+### 4. Signer Authorization Check
+
+Before running WebAuthn verification, the contract checks that the supplied public key is registered:
+
+```rust
+if !storage::has_signer(&env, &pub_key) {
+    return Err(WalletError::SignerNotAuthorized)
+}
+```
+
+An attacker cannot use an arbitrary P-256 key — only keys explicitly registered via `init()` or `add_signer()` (which itself requires an existing signer's authorization) are accepted.
+
+### 5. Biometric Re-verification at Sign Time
+
+`signAuthEntry` sets `userVerification: 'required'` in the WebAuthn assertion request. The authenticator will always prompt for biometric or PIN verification — a passive browser session or stolen cookie cannot authorize transactions.
+
+---
+
+## Threat Model
+
+| Threat | Mitigation | Notes |
+|---|---|---|
+| Stolen device | Biometric required at sign time | Attacker still needs fingerprint/face |
+| Malware on device | Secure enclave isolation | JS cannot access private key |
+| Phishing (wrong origin) | WebAuthn origin binding | Authenticator embeds origin in `clientDataJSON`; contract can validate |
+| Signature replay | Challenge binding to `signature_payload` | Each tx has unique payload |
+| Rogue signer added | `add_signer` requires existing signer auth | Cannot add without biometric |
+| Contract bug | Full audit (planned) + unit tests | 6 passing tests covering key vectors |
+| Quantum computer | P-256 is classically secure | Post-quantum upgrade path: swap to ML-DSA when Soroban supports it |
+
+---
+
+## Known Limitations
+
+### No Origin Verification (Current)
+
+The contract currently does **not** verify the `origin` field in `clientDataJSON`. A valid WebAuthn signature from `evil.com` using a credential registered at `veil.app` would still pass the contract's verification.
+
+**Mitigation in Phase 4:** Store the expected origin (RP ID hash) in the contract at `init()` time, then verify `rpIdHash` in `authData` matches `SHA256(expected_origin)`.
+
+### No Replay Protection via Nonce (Phase 5)
+
+Soroban's built-in sequence number provides ledger-level replay protection, but Veil does not yet implement a per-signer nonce or sequence counter.
+
+**Mitigation in Phase 5:** Add an on-chain nonce that increments with each authorization.
+
+### `localStorage` for Credential Storage (SDK, Current)
+
+The SDK stores `credential_id` and `public_key` in `localStorage`, which is accessible to any same-origin JavaScript.
+
+**Mitigation:** Production apps should use `IndexedDB` with encryption, or rely on the browser's built-in credential manager (Passkeys are synced via iCloud Keychain / Google Password Manager and don't need manual storage of the credential ID if using `discoverable credentials`).
+
+### Last-Signer Lock
+
+Calling `remove_signer` on the only registered key permanently locks the contract — no transactions can ever be authorized.
+
+**Mitigation in Phase 5:** Guardian recovery allows a pre-registered guardian key to add new signers even when all primary signers are gone.
+
+---
+
+## Cryptographic Primitives
+
+| Primitive | Standard | Implementation |
+|---|---|---|
+| Key generation | NIST P-256 (secp256r1) | Browser WebAuthn / hardware |
+| Signature scheme | ECDSA with SHA-256 (ES256) | `p256` Rust crate v0.13 |
+| Hash function | SHA-256 | `sha2` Rust crate v0.10 (no_std) |
+| Encoding | Base64URL (no padding) | Custom implementation in `auth.rs` |
+| Key format | Uncompressed SEC1 (65 bytes) | `0x04 \|\| x \|\| y` |
+| Signature format | Raw r \|\| s (64 bytes) | DER → raw in SDK `utils.ts` |
+
+---
+
+## Responsible Disclosure
+
+If you discover a security vulnerability, please **do not open a public GitHub issue**. Instead:
+
+1. Email: `security@invisible-wallet.dev` (placeholder — update before launch)
+2. Use GitHub's [private vulnerability reporting](https://github.com/stellar/invisible-wallet/security/advisories/new)
+3. Include: description, reproduction steps, affected versions, and potential impact
+
+We aim to acknowledge reports within 48 hours and resolve critical issues within 7 days.
+
+---
+
+## Audit Status
+
+| Scope | Auditor | Status |
+|---|---|---|
+| Smart contract (`auth.rs`, `lib.rs`) | TBD | Not yet scheduled |
+| SDK (`utils.ts`, `useInvisibleWallet.ts`) | TBD | Not yet scheduled |
+| Full system | TBD | Planned for Phase 4 |
+
+Community review is welcome — see the [GitHub repository](https://github.com/stellar/invisible-wallet) to review the source.

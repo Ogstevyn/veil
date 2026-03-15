@@ -1,0 +1,186 @@
+@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400;1,600&family=Inter:wght@400;500&family=Anton&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Stellar Brand Manual 2025 — Design Tokens ───────────────────────── */
+:root {
+  /* Primary */
+  --gold:       #FDDA24;
+  --near-black: #0F0F0F;
+  --off-white:  #F6F7F8;
+
+  /* Secondary */
+  --lilac:      #B7ACE8;
+  --teal:       #00A7B5;
+  --warm-grey:  #D6D2C4;
+  --navy:       #002E5D;
+
+  /* Animation */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── Reset ───────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--near-black);
+  color: var(--off-white);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar               { width: 4px; }
+::-webkit-scrollbar-track         { background: var(--near-black); }
+::-webkit-scrollbar-thumb         { background: var(--gold); border-radius: 4px; }
+
+/* ── Gold highlight (bespoke hand-feel underline) ───────────────────── */
+/* Use via <span class="hl"> in JSX */
+.hl {
+  background-image: linear-gradient(
+    104deg,
+    transparent 0%,
+    rgba(253, 218, 36, 0.52) 3.5%,
+    rgba(253, 218, 36, 0.36) 95.5%,
+    transparent 100%
+  );
+  background-size: 100% 38%;
+  background-repeat: no-repeat;
+  background-position: 0 90%;
+  padding-bottom: 2px;
+}
+
+/* On light (off-white) backgrounds use slightly stronger opacity */
+.hl-dark {
+  background-image: linear-gradient(
+    104deg,
+    transparent 0%,
+    rgba(253, 218, 36, 0.75) 3.5%,
+    rgba(253, 218, 36, 0.58) 95.5%,
+    transparent 100%
+  );
+  background-size: 100% 38%;
+  background-repeat: no-repeat;
+  background-position: 0 90%;
+  padding-bottom: 2px;
+}
+
+/* ── Button system ───────────────────────────────────────────────────── */
+.btn-gold {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 2rem;
+  background: var(--gold);
+  color: var(--near-black);
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  border-radius: 100px;
+  border: none;
+  cursor: pointer;
+  transition: background 120ms var(--ease), transform 100ms var(--ease);
+  white-space: nowrap;
+}
+.btn-gold:hover  { background: #f0cf1b; }
+.btn-gold:active { transform: scale(0.98); }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 2rem;
+  background: transparent;
+  color: var(--off-white);
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  font-size: 0.9375rem;
+  border-radius: 100px;
+  border: 1px solid rgba(246, 247, 248, 0.22);
+  cursor: pointer;
+  transition: border-color 120ms var(--ease), background 120ms var(--ease), transform 100ms var(--ease);
+  white-space: nowrap;
+}
+.btn-ghost:hover  { border-color: rgba(246,247,248,0.5); background: rgba(246,247,248,0.05); }
+.btn-ghost:active { transform: scale(0.98); }
+
+.btn-navy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 2rem;
+  background: var(--near-black);
+  color: var(--gold);
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  border-radius: 100px;
+  border: none;
+  cursor: pointer;
+  transition: background 120ms var(--ease), transform 100ms var(--ease);
+  white-space: nowrap;
+}
+.btn-navy:hover  { background: #1a1a1a; }
+.btn-navy:active { transform: scale(0.98); }
+
+/* ── Hero animated orbs ──────────────────────────────────────────────── */
+.hero-orb-gold {
+  position: absolute;
+  top: -8%;
+  left: -8%;
+  width: 68vw;
+  height: 68vw;
+  background: radial-gradient(circle, rgba(253, 218, 36, 0.07) 0%, transparent 65%);
+  animation: orb-a 16s ease-in-out infinite;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.hero-orb-teal {
+  position: absolute;
+  bottom: -18%;
+  right: -12%;
+  width: 56vw;
+  height: 56vw;
+  background: radial-gradient(circle, rgba(0, 167, 181, 0.055) 0%, transparent 65%);
+  animation: orb-b 20s ease-in-out infinite;
+  pointer-events: none;
+  will-change: transform;
+}
+
+@keyframes orb-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  35%       { transform: translate(5%, -7%) scale(1.07); }
+  68%       { transform: translate(-4%, 5%) scale(0.95); }
+}
+
+@keyframes orb-b {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  40%       { transform: translate(-7%, 5%) scale(1.09); }
+  72%       { transform: translate(4%, -4%) scale(0.94); }
+}
+
+/* ── Card styles ─────────────────────────────────────────────────────── */
+.card-dark {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+}
+
+.card-light {
+  background: #FFFFFF;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 16px;
+}
+
+/* ── Section padding ─────────────────────────────────────────────────── */
+.section-pad { padding: 7rem 1.5rem; }
+
+@media (max-width: 768px) {
+  .section-pad { padding: 5rem 1rem; }
+}

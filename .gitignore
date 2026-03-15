@@ -6,6 +6,12 @@ Cargo.lock
 sdk/node_modules/
 sdk/dist/
 
+# Frontend
+frontend/website/node_modules/
+frontend/website/.next/
+frontend/docs/node_modules/
+frontend/docs/.next/
+
 # Misc
 *.env
 .DS_Store
