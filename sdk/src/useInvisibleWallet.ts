@@ -66,6 +66,8 @@ export type DeployResult = {
 type InvisibleWallet = {
     /** Soroban contract address of the deployed wallet, or null if not yet registered. */
     address: string | null;
+    /** True if the wallet contract has been confirmed to exist on-chain. */
+    isDeployed: boolean;
     isPending: boolean;
     error: string | null;
     /** Create a new passkey credential and compute the deterministic wallet address. */
@@ -91,7 +93,10 @@ type InvisibleWallet = {
      * @param signaturePayload  The 32-byte payload from the Soroban SorobanAuthorizationEntry.
      */
     signAuthEntry: (signaturePayload: Uint8Array) => Promise<WebAuthnSignature | null>;
-    /** Restore an existing wallet session from localStorage. */
+    /**
+     * Restore an existing wallet session from localStorage.
+     * Verifies that the wallet contract actually exists on-chain before setting the address.
+     */
     login: () => Promise<void>;
 };
 
@@ -124,6 +129,7 @@ export function useInvisibleWallet(config: WalletConfig): InvisibleWallet {
     const { factoryAddress, rpcUrl, networkPassphrase } = config;
 
     const [address, setAddress] = useState<string | null>(null);
+    const [isDeployed, setIsDeployed] = useState(false);
     const [isPending, setIsPending] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -219,10 +225,14 @@ export function useInvisibleWallet(config: WalletConfig): InvisibleWallet {
                 );
                 // Reached here → entry found → already deployed.
                 setAddress(walletAddress);
+                setIsDeployed(true);
                 localStorage.setItem('invisible_wallet_address', walletAddress);
                 return { walletAddress, alreadyDeployed: true };
-            } catch {
-                // Entry not found → proceed with deployment.
+            } catch (e: unknown) {
+                // Only proceed if the entry was genuinely absent.
+                // Any other error (network failure, RPC down) should bubble up.
+                const msg = e instanceof Error ? e.message : String(e);
+                if (!msg.toLowerCase().includes('not found')) throw e;
             }
 
             // ── Build transaction ─────────────────────────────────────────────
@@ -269,6 +279,7 @@ export function useInvisibleWallet(config: WalletConfig): InvisibleWallet {
             }
 
             setAddress(walletAddress);
+            setIsDeployed(true);
             localStorage.setItem('invisible_wallet_address', walletAddress);
             return { walletAddress, alreadyDeployed: false };
 
@@ -284,11 +295,41 @@ export function useInvisibleWallet(config: WalletConfig): InvisibleWallet {
     // ── login ─────────────────────────────────────────────────────────────────
 
     const login = async () => {
-        const stored = localStorage.getItem('invisible_wallet_address');
-        if (stored) {
-            setAddress(stored);
-        } else {
-            setError('No wallet found. Please register first.');
+        setIsPending(true);
+        setError(null);
+        try {
+            const stored = localStorage.getItem('invisible_wallet_address');
+            if (!stored) {
+                setError('No wallet found. Please register first.');
+                return;
+            }
+
+            const server = new SorobanRpc.Server(rpcUrl);
+
+            // Verify the wallet actually exists on-chain before restoring session
+            try {
+                await server.getContractData(
+                    stored,
+                    xdr.ScVal.scvLedgerKeyContractInstance(),
+                    SorobanRpc.Durability.Persistent
+                );
+                // Reached here → entry found → already deployed.
+                setAddress(stored);
+                setIsDeployed(true);
+            } catch (e: unknown) {
+                const msg = e instanceof Error ? e.message : String(e);
+                if (msg.toLowerCase().includes('not found')) {
+                    setError('Wallet not yet deployed. Call deploy() to create it on-chain.');
+                    setAddress(null);
+                    setIsDeployed(false);
+                } else {
+                    throw e; // Real network error
+                }
+            }
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : String(err));
+        } finally {
+            setIsPending(false);
         }
     };
 
@@ -346,5 +387,5 @@ export function useInvisibleWallet(config: WalletConfig): InvisibleWallet {
         }
     };
 
-    return { address, isPending, error, register, deploy, signAuthEntry, login };
+    return { address, isDeployed, isPending, error, register, deploy, signAuthEntry, login };
 }
