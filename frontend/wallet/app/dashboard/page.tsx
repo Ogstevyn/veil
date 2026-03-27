@@ -13,8 +13,8 @@ const ACTIVITY_EVENTS = ['mousemove', 'keydown', 'touchstart', 'click', 'scroll'
 
 // ── useInactivityLock ─────────────────────────────────────────────────────────
 function useInactivityLock() {
-  const router = useRouter()
-  const timerRef       = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const router          = useRouter()
+  const timerRef        = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastActivityRef = useRef<number>(Date.now())
 
   const lock = useCallback(() => {
@@ -41,7 +41,7 @@ function useInactivityLock() {
     )
 
     return () => {
-      // Clean up on unmount (e.g. user navigates away from dashboard)
+      // Clean up on unmount
       if (timerRef.current) clearTimeout(timerRef.current)
       ACTIVITY_EVENTS.forEach((event) =>
         window.removeEventListener(event, resetTimer),
@@ -62,32 +62,42 @@ export default function DashboardPage() {
       : null
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-[#F6F7F8] flex flex-col">
-      {/* ── Header ── */}
-      <header className="border-b border-white/[0.06] px-6 py-4 flex items-center justify-between">
-        <span className="font-serif font-semibold italic text-[#FDDA24] text-xl tracking-tight select-none">
-          Veil
+    <div className="wallet-shell">
+
+      {/* ── Header — .wallet-nav from globals.css ── */}
+      <header className="wallet-nav">
+        {/* Wordmark — Anton ALL CAPS per Stellar brand manual */}
+        <span style={{ fontFamily: 'Anton, Impact, sans-serif', fontSize: '1.25rem', letterSpacing: '0.08em', color: 'var(--gold)', userSelect: 'none' }}>
+          VEIL
         </span>
-        <span className="text-xs text-white/40 font-mono truncate max-w-[200px]">
-          {walletAddress ?? '—'}
-        </span>
+        {/* Wallet address chip — Inconsolata font per brand */}
+        {walletAddress && (
+          <span className="address-chip">
+            {walletAddress.slice(0, 6)}…{walletAddress.slice(-6)}
+          </span>
+        )}
       </header>
 
-      {/* ── Main content ── */}
-      <main className="flex-1 max-w-3xl mx-auto w-full px-6 py-12 space-y-8">
-        <div>
-          <h1 className="text-2xl font-semibold text-white mb-1">Dashboard</h1>
-          <p className="text-sm text-white/50">
+      {/* ── Main content — .wallet-main from globals.css ── */}
+      <main className="wallet-main" style={{ paddingTop: '3rem', paddingBottom: '3rem' }}>
+
+        <div style={{ marginBottom: '2rem' }}>
+          {/* Heading — Lora SemiBold Italic per brand */}
+          <h1 style={{ fontFamily: 'Lora, Georgia, serif', fontWeight: 600, fontStyle: 'italic', fontSize: '1.75rem', color: 'var(--off-white)', marginBottom: '0.25rem' }}>
+            Dashboard
+          </h1>
+          <p style={{ fontSize: '0.875rem', color: 'rgba(246,247,248,0.5)' }}>
             Your wallet locks automatically after 5 minutes of inactivity.
           </p>
         </div>
 
         {/* Placeholder — replace with real wallet UI */}
-        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-8 text-center">
-          <p className="text-white/40 text-sm">
+        <div className="card" style={{ textAlign: 'center', padding: '3rem 2rem' }}>
+          <p style={{ fontSize: '0.875rem', color: 'rgba(246,247,248,0.4)' }}>
             Wallet content goes here.
           </p>
         </div>
+
       </main>
     </div>
   )
