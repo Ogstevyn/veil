@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Keypair } from 'stellar-sdk'
 import { VeilLogo } from '@/components/VeilLogo'
+import { OnboardingTutorial } from '@/components/OnboardingTutorial'
 import { useInvisibleWallet } from '@veil/sdk'
 
 const CONFIG = {
@@ -22,6 +23,19 @@ export default function OnboardingPage() {
   const [step, setStep] = useState<Step>('landing')
   const [error, setError] = useState<string | null>(null)
   const [address, setAddress] = useState<string | null>(null)
+  const [showTutorial, setShowTutorial] = useState(false)
+
+  useEffect(() => {
+    const seen = localStorage.getItem('veil_seen_tutorial')
+    if (!seen) {
+      setShowTutorial(true)
+    }
+  }, [])
+
+  const handleTutorialComplete = () => {
+    localStorage.setItem('veil_seen_tutorial', '1')
+    setShowTutorial(false)
+  }
 
   const wallet = useInvisibleWallet(CONFIG)
 
@@ -54,7 +68,9 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="wallet-shell" style={{ justifyContent: 'center', alignItems: 'center', padding: '2rem 1.25rem', minHeight: '100dvh' }}>
+    <>
+      {showTutorial && <OnboardingTutorial onComplete={handleTutorialComplete} />}
+      <div className="wallet-shell" style={{ justifyContent: 'center', alignItems: 'center', padding: '2rem 1.25rem', minHeight: '100dvh' }}>
       <div style={{ maxWidth: 400, width: '100%' }}>
 
         {/* Logo + wordmark */}
@@ -140,5 +156,6 @@ export default function OnboardingPage() {
         </p>
       </div>
     </div>
+    </>
   )
 }
