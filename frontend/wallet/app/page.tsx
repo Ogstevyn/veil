@@ -51,7 +51,7 @@ export default function OnboardingPage() {
       setStep('done')
 
       // Persist minimal session to sessionStorage for the dashboard
-      sessionStorage.setItem('veil_address', deployed.walletAddress)
+      sessionStorage.setItem('invisible_wallet_address', deployed.walletAddress)
       sessionStorage.setItem('veil_signer_secret', signerKeypair.secret())
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -121,7 +121,6 @@ export default function OnboardingPage() {
         {step === 'done' && address && (
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             <div style={{ textAlign: 'center' }}>
-              {/* Checkmark icon */}
               <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ margin: '0 auto 0.75rem' }}>
                 <circle cx="20" cy="20" r="19" stroke="var(--teal)" strokeWidth="1.5" />
                 <path d="M13 20.5l5 5 9-9" stroke="var(--teal)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
