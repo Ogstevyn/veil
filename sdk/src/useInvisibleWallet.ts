@@ -3,7 +3,8 @@ import {
     Account,
     Contract,
     Keypair,
-    SorobanRpc,
+    rpc as SorobanRpc,
+    Horizon,
     StrKey,
     TransactionBuilder,
     BASE_FEE,
@@ -12,7 +13,8 @@ import {
     scValToNative,
     Networks,
 } from 'stellar-sdk';
-import { Server as HorizonServer } from 'stellar-sdk/lib/horizon';
+
+const HorizonServer = Horizon.Server;
 import {
     bufferToHex,
     hexToUint8Array,

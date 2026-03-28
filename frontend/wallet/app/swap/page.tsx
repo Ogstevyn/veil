@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Keypair, Networks, TransactionBuilder, BASE_FEE, Operation, Asset, Memo } from 'stellar-sdk'
-import { Server } from 'stellar-sdk/lib/horizon'
+import { Keypair, Networks, TransactionBuilder, BASE_FEE, Operation, Asset, Memo, Horizon } from 'stellar-sdk'
+const Server = Horizon.Server
 import { VeilLogo } from '@/components/VeilLogo'
 
 // ── Constants ──────────────────────────────────────────────────────────────────

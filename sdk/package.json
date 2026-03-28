@@ -18,7 +18,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "stellar-sdk": "^11.0.0"
+    "stellar-sdk": "^13.3.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

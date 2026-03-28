@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Keypair, Networks, TransactionBuilder, BASE_FEE, Asset,
-  Contract, SorobanRpc, nativeToScVal, xdr,
+  Contract, rpc as SorobanRpc, nativeToScVal, xdr, Horizon,
 } from 'stellar-sdk'
-import { Server } from 'stellar-sdk/lib/horizon'
+const Server = Horizon.Server
 import { VeilLogo } from '@/components/VeilLogo'
 import { ContactPicker } from '@/components/ContactPicker'
 import { QrScanner } from '@/components/QrScanner'

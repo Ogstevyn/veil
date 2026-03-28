@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Server } from 'stellar-sdk/lib/horizon'
+import { Horizon } from 'stellar-sdk'
+const Server = Horizon.Server
 import { TxDetailSheet, type TxRecord } from '@/components/TxDetailSheet'
 
 // ── Inactivity lock ───────────────────────────────────────────────────────────
