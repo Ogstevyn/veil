@@ -3,6 +3,7 @@ target/
 Cargo.lock
 
 # Node / SDK
+node_modules/
 sdk/node_modules/
 sdk/dist/
 
@@ -11,6 +12,8 @@ frontend/website/node_modules/
 frontend/website/.next/
 frontend/docs/node_modules/
 frontend/docs/.next/
+frontend/wallet/node_modules/
+frontend/wallet/.next/
 
 # Misc
 *.env
