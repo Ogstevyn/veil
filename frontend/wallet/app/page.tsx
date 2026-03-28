@@ -54,12 +54,16 @@ export default function OnboardingPage() {
 
       const deployed = await wallet.deploy(signerKeypair)
 
-      setAddress(deployed.walletAddress)
-      setStep('done')
-
       // Persist minimal session to sessionStorage for the dashboard
       sessionStorage.setItem('invisible_wallet_address', deployed.walletAddress)
       sessionStorage.setItem('veil_signer_secret', signerKeypair.secret())
+
+      setAddress(deployed.walletAddress)
+      setStep('done')
+
+      // Brief pause so the success state is visible, then go to dashboard
+      await new Promise(r => setTimeout(r, 1200))
+      router.push('/dashboard')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       setError(msg)
