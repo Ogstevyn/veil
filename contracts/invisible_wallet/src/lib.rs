@@ -1,4 +1,4 @@
-﻿#![no_std]
+﻿﻿#![no_std]
 use soroban_sdk::{
     contract, contractimpl, contracterror,
     Env, Address, Bytes, BytesN, Vec, Symbol, Val,
@@ -168,6 +168,10 @@ impl InvisibleWallet {
 
     pub fn has_signer(env: Env, key: BytesN<65>) -> bool {
         storage::has_signer(&env, &key)
+    }
+
+    pub fn get_signers(env: Env) -> Map<u32, BytesN<65>> {
+        storage::get_signers(&env)
     }
 
     pub fn execute(env: Env, target: Address, func: Symbol, args: Vec<Val>) {
