@@ -318,6 +318,7 @@ export function useInvisibleWallet(config: WalletConfig): InvisibleWallet {
             : Keypair.fromSecret(signerSecret.secret());
         setIsPending(true);
         setError(null);
+        let walletAddress: string | undefined;
         try {
             // Resolve the public key — prefer explicit param, fall back to localStorage.
             let pubKeyBytes = publicKeyBytes;
@@ -329,38 +330,10 @@ export function useInvisibleWallet(config: WalletConfig): InvisibleWallet {
                 pubKeyBytes = hexToUint8Array(hex);
             }
 
-            // Pre-compute the deterministic address so we can guard against re-deployment
-            // and update local state the moment the tx confirms — without parsing the
-            // contract return value.
-            const walletAddress = computeWalletAddress(factoryAddress, pubKeyBytes, networkPassphrase);
+            // Pre-compute the deterministic address — available to the catch block too.
+            walletAddress = computeWalletAddress(factoryAddress, pubKeyBytes, networkPassphrase);
 
             const server = new SorobanRpc.Server(rpcUrl);
-
-            // ── Guard: already deployed? ──────────────────────────────────────
-            // Attempt to fetch the contract's instance ledger entry. If it exists,
-            // the wallet is already live and we return early without a duplicate tx.
-            try {
-                await server.getContractData(
-                    walletAddress,
-                    xdr.ScVal.scvLedgerKeyContractInstance(),
-                    SorobanRpc.Durability.Persistent
-                );
-                // Reached here → entry found → already deployed.
-                setAddress(walletAddress);
-                setIsDeployed(true);
-                localStorage.setItem('invisible_wallet_address', walletAddress);
-                return { walletAddress, alreadyDeployed: true };
-            } catch (e: unknown) {
-                // Only proceed if the entry was genuinely absent.
-                // Any other error (network failure, RPC down) should bubble up.
-                let msg: string;
-                if (e instanceof Error) {
-                    msg = e.message;
-                } else {
-                    try { msg = JSON.stringify(e); } catch { msg = String(e); }
-                }
-                if (!msg.toLowerCase().includes('not found') && !msg.toLowerCase().includes('404')) throw e;
-            }
 
             // ── Build transaction ─────────────────────────────────────────────
             // The factory's `deploy` function receives the raw P-256 public key bytes
@@ -421,6 +394,13 @@ export function useInvisibleWallet(config: WalletConfig): InvisibleWallet {
                 message = err.message;
             } else {
                 try { message = JSON.stringify(err); } catch { message = String(err); }
+            }
+            // If factory says already deployed, treat as success
+            if (message.toLowerCase().includes('alreadydeployed') || message.toLowerCase().includes('already_deployed')) {
+                setAddress(walletAddress!);
+                setIsDeployed(true);
+                localStorage.setItem('invisible_wallet_address', walletAddress!);
+                return { walletAddress: walletAddress!, alreadyDeployed: true };
             }
             setError(message);
             throw new Error(message);
