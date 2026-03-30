@@ -40,7 +40,7 @@ export default function SendPage() {
     if (!addr) { router.replace('/'); return }
 
     // Check camera/QR scanner availability before showing scan button
-    if (typeof BarcodeDetector !== 'undefined' || !!navigator.mediaDevices?.getUserMedia) {
+    if (typeof (window as unknown as { BarcodeDetector?: unknown }).BarcodeDetector !== 'undefined' || !!navigator.mediaDevices?.getUserMedia) {
       setHasCamera(true)
     }
 
