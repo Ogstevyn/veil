@@ -191,7 +191,6 @@ export default function SettingsPage() {
                 </div>
               </button>
 
-<<<<<<< HEAD
               {/* Address Book card */}
               <button
                 className="card"
@@ -210,7 +209,7 @@ export default function SettingsPage() {
                   </svg>
                 </div>
               </button>
-=======
+
               {/* Signers list */}
               <div style={{ marginTop: '2rem' }}>
                 <p style={{ fontSize: '0.75rem', color: 'rgba(246,247,248,0.4)', fontFamily: 'Anton, Impact, sans-serif', letterSpacing: '0.06em', marginBottom: '0.625rem' }}>
@@ -237,8 +236,8 @@ export default function SettingsPage() {
                             {truncated}
                           </p>
                         </div>
-                        
-                        <button 
+
+                        <button
                           onClick={() => handleRemoveSigner(s.index)}
                           disabled={loading || signers.length <= 1}
                           style={{ background: 'none', border: 'none', color: signers.length <= 1 ? 'rgba(246,247,248,0.1)' : 'var(--teal)', fontSize: '0.75rem', cursor: signers.length <= 1 ? 'not-allowed' : 'pointer', textDecoration: 'underline' }}
@@ -250,7 +249,6 @@ export default function SettingsPage() {
                   })}
                 </div>
               </div>
->>>>>>> pr-52
             </div>
           </>
         )}
