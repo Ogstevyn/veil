@@ -226,13 +226,3 @@ pub fn verify_webauthn(
     verifying_key.verify_prehash(&message_hash, &sig_obj)
         .map_err(|_| WalletError::SignatureVerificationFailed)
 }
-
-use soroban_sdk::{Bytes, BytesN};
-
-pub struct WebAuthnSignature {
-    pub public_key: BytesN<65>,
-    pub auth_data: Bytes,
-    pub client_data_json: Bytes,
-    pub signature: BytesN<64>,
-    pub nonce: u64, // ✅ NEW FIELD
-}
