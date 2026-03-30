@@ -146,7 +146,7 @@ type InvisibleWallet = {
      *                       the key stored in localStorage by register().
      * @returns The deployed wallet's contract address and whether it was already live.
      */
-    deploy: (signerKeypair: Keypair, publicKeyBytes?: Uint8Array) => Promise<DeployResult>;
+    deploy: (signerKeypair: Keypair | string, publicKeyBytes?: Uint8Array) => Promise<DeployResult>;
     /**
      * Sign a Soroban authorization entry using the stored passkey.
      *
