@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Horizon, Keypair } from '@stellar/stellar-sdk'
+import {
+  Horizon, Keypair, rpc as SorobanRpc, Contract, Account,
+  TransactionBuilder, BASE_FEE, Networks, Asset, nativeToScVal, scValToNative,
+} from '@stellar/stellar-sdk'
 const Server = Horizon.Server
 import { TxDetailSheet, type TxRecord } from '@/components/TxDetailSheet'
 
@@ -75,62 +78,89 @@ export default function DashboardPage() {
     const horizonUrl = isTestnet
       ? 'https://horizon-testnet.stellar.org'
       : 'https://horizon.stellar.org'
+    const rpcUrl = isTestnet
+      ? 'https://soroban-testnet.stellar.org'
+      : 'https://soroban.stellar.org'
 
-    const server = new Server(horizonUrl)
+    const horizonServer = new Server(horizonUrl)
+    const rpcServer     = new SorobanRpc.Server(rpcUrl)
 
-    // The wallet contract address (C...) is a Soroban account — Horizon's
-    // loadAccount only works for classic G... accounts. Use the fee-payer
-    // keypair's G... address to query balances and activity instead.
+    // ── 1. Wallet contract (C...) XLM balance via native SAC ────────────────
+    // This is the canonical on-chain balance — survives cache clears and
+    // cross-device recovery because it reads directly from the ledger.
+    let contractXlm = 0
+    try {
+      const sacAddress  = Asset.native().contractId(Networks.TESTNET)
+      const sacContract = new Contract(sacAddress)
+      const dummyKp     = Keypair.random()
+      const dummyAcct   = new Account(dummyKp.publicKey(), '0')
+      const balanceTx   = new TransactionBuilder(dummyAcct, {
+        fee: BASE_FEE, networkPassphrase: Networks.TESTNET,
+      })
+        .addOperation(sacContract.call('balance', nativeToScVal(walletAddress, { type: 'address' })))
+        .setTimeout(30)
+        .build()
+
+      const sim = await rpcServer.simulateTransaction(balanceTx)
+      if (!SorobanRpc.Api.isSimulationError(sim)) {
+        const result = (sim as SorobanRpc.Api.SimulateTransactionSuccessResponse).result
+        if (result) {
+          const stroops = scValToNative(result.retval) as bigint
+          contractXlm  = Number(stroops) / 10_000_000
+        }
+      }
+    } catch { /* contract has no balance entry yet */ }
+
+    // ── 2. Fee-payer G... balance (holds the testnet faucet XLM) ────────────
     const signerSecret    = sessionStorage.getItem('veil_signer_secret')
     const signerPublicKey = signerSecret
       ? Keypair.fromSecret(signerSecret).publicKey()
       : (localStorage.getItem('veil_signer_public_key') || null)
-    const accountToLoad = signerPublicKey || walletAddress
 
-    try {
-      // ── Balances ────────────────────────────────────────────────────────────
-      const account = await server.loadAccount(accountToLoad)
-      const walletAssets: WalletAsset[] = account.balances.map(b => {
-        if (b.asset_type === 'native') return { code: 'XLM', issuer: null, balance: b.balance }
-        const issued = b as { asset_code: string; asset_issuer: string; balance: string }
-        return { code: issued.asset_code, issuer: issued.asset_issuer, balance: issued.balance }
-      })
-      setAssets(walletAssets)
+    let feePayerXlm = 0
+    let txRecords: TxRecord[] = []
 
-      // ── Recent payments ──────────────────────────────────────────────────────
-      const payments = await server
-        .payments()
-        .forAccount(accountToLoad)
-        .limit(20)
-        .order('desc')
-        .call()
+    if (signerPublicKey) {
+      try {
+        const account = await horizonServer.loadAccount(signerPublicKey)
+        const native  = account.balances.find(b => b.asset_type === 'native')
+        feePayerXlm   = native ? parseFloat(native.balance) : 0
 
-      type HorizonPayment = {
-        id: string; type: string; from: string; to: string
-        amount: string; asset_type: string; asset_code?: string
-        created_at: string; transaction_hash: string
-        transaction?: { memo?: string }
-      }
+        // Transaction history (fee-payer + wallet address)
+        type HorizonPayment = {
+          id: string; type: string; from: string; to: string
+          amount: string; asset_type: string; asset_code?: string
+          created_at: string; transaction_hash: string
+          transaction?: { memo?: string }
+        }
 
-      const txRecords: TxRecord[] = (payments.records as HorizonPayment[])
-        .filter(p => p.type === 'payment')
-        .map(p => ({
-          id:           p.id,
-          type:         p.from === accountToLoad ? 'sent' : 'received',
-          amount:       p.amount,
-          asset:        p.asset_type === 'native' ? 'XLM' : (p.asset_code ?? ''),
-          counterparty: p.from === accountToLoad ? p.to : p.from,
-          timestamp:    Math.floor(new Date(p.created_at).getTime() / 1000),
-          hash:         p.transaction_hash,
-          memo:         p.transaction?.memo,
-        }))
+        const payments = await horizonServer
+          .payments()
+          .forAccount(signerPublicKey)
+          .limit(20)
+          .order('desc')
+          .call()
 
-      setTransactions(txRecords)
-    } catch {
-      // Account may not yet be funded on testnet
-    } finally {
-      setLoading(false)
+        txRecords = (payments.records as HorizonPayment[])
+          .filter(p => p.type === 'payment')
+          .map(p => ({
+            id:           p.id,
+            type:         p.from === signerPublicKey ? 'sent' : 'received',
+            amount:       p.amount,
+            asset:        p.asset_type === 'native' ? 'XLM' : (p.asset_code ?? ''),
+            counterparty: p.from === signerPublicKey ? p.to : p.from,
+            timestamp:    Math.floor(new Date(p.created_at).getTime() / 1000),
+            hash:         p.transaction_hash,
+            memo:         p.transaction?.memo,
+          }))
+      } catch { /* not yet funded */ }
     }
+
+    // ── 3. Combine and display ───────────────────────────────────────────────
+    const totalXlm = (contractXlm + feePayerXlm).toFixed(7)
+    setAssets([{ code: 'XLM', issuer: null, balance: totalXlm }])
+    setTransactions(txRecords)
+    setLoading(false)
   }, [walletAddress, isTestnet])
 
   useEffect(() => {
