@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { VeilLogo } from '@/components/VeilLogo'
-import { useInvisibleWallet } from '@veil/sdk'
+import { computeWalletAddress, hexToUint8Array } from '@veil/utils'
+import { rpc as SorobanRpc, xdr } from '@stellar/stellar-sdk'
 
 const CONFIG = {
   rpcUrl: 'https://soroban-testnet.stellar.org',
@@ -18,26 +19,66 @@ export default function RecoverPage() {
   const [step, setStep] = useState<Step>('idle')
   const [error, setError] = useState<string | null>(null)
 
-  const wallet = useInvisibleWallet(CONFIG)
-
   async function handleRecover() {
     setError(null)
     setStep('authenticating')
     try {
-      // login() triggers a WebAuthn assertion and returns the public key + address
-      const result = await wallet.login()
-      if (!result?.walletAddress) throw new Error('Could not derive wallet address from passkey')
+      // ── Step 1: get stored passkey metadata ──────────────────────────────
+      const keyId        = localStorage.getItem('invisible_wallet_key_id')
+      const publicKeyHex = localStorage.getItem('invisible_wallet_public_key')
 
-      // The signer secret stored during initial wallet creation is needed to authorise
-      // future transactions. login() re-derives the wallet address from the passkey but
-      // cannot recover the original signer secret — the user must have it persisted.
-      // For now we restore the wallet address so the dashboard loads correctly.
-      sessionStorage.setItem('invisible_wallet_address', result.walletAddress)
+      if (!keyId || !publicKeyHex) {
+        throw new Error(
+          'No passkey data found on this device. Recovery is only possible on the device where you originally registered, or through guardian recovery.'
+        )
+      }
+
+      // ── Step 2: prompt WebAuthn assertion to verify identity ─────────────
+      const b64 = keyId.replace(/-/g, '+').replace(/_/g, '/')
+      const binary = atob(b64)
+      const idBuffer = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) idBuffer[i] = binary.charCodeAt(i)
+
+      const challenge = crypto.getRandomValues(new Uint8Array(32))
+      await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          allowCredentials: [{ id: idBuffer, type: 'public-key' }],
+          userVerification: 'required',
+        },
+      })
+
+      // ── Step 3: derive wallet address from stored public key ─────────────
+      let walletAddress = localStorage.getItem('invisible_wallet_address')
+
+      if (!walletAddress) {
+        // Address was cleared — recompute from stored public key
+        const pubKeyBytes = hexToUint8Array(publicKeyHex)
+        walletAddress = computeWalletAddress(CONFIG.factoryAddress, pubKeyBytes, CONFIG.networkPassphrase)
+        // Verify it actually exists on-chain
+        const server = new SorobanRpc.Server(CONFIG.rpcUrl)
+        await server.getContractData(
+          walletAddress,
+          xdr.ScVal.scvLedgerKeyContractInstance(),
+          SorobanRpc.Durability.Persistent
+        )
+        // Restore to localStorage
+        localStorage.setItem('invisible_wallet_address', walletAddress)
+      }
+
+      // ── Step 4: restore session ──────────────────────────────────────────
+      sessionStorage.setItem('invisible_wallet_address', walletAddress)
 
       setStep('done')
       setTimeout(() => router.push('/dashboard'), 800)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err))
+      const msg = err instanceof Error ? err.message : String(err)
+      // NotAllowedError = user cancelled or biometric failed
+      if (msg.includes('NotAllowedError') || msg.includes('not allowed')) {
+        setError('Biometric verification was cancelled or failed. Please try again.')
+      } else {
+        setError(msg)
+      }
       setStep('error')
     }
   }
@@ -66,11 +107,6 @@ export default function RecoverPage() {
             <button className="btn-ghost" onClick={() => router.push('/')}>
               Back
             </button>
-            {error && (
-              <p style={{ fontSize: '0.8125rem', color: 'var(--teal)', textAlign: 'center', marginTop: '0.5rem' }}>
-                {error}
-              </p>
-            )}
           </div>
         )}
 
@@ -100,7 +136,7 @@ export default function RecoverPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             <div className="card" style={{ textAlign: 'center' }}>
               <p style={{ fontWeight: 500, marginBottom: '0.5rem' }}>Recovery failed</p>
-              <p style={{ fontSize: '0.8125rem', color: 'rgba(246,247,248,0.4)' }}>{error}</p>
+              <p style={{ fontSize: '0.8125rem', color: 'rgba(246,247,248,0.4)', lineHeight: 1.6 }}>{error}</p>
             </div>
             <button className="btn-ghost" onClick={() => setStep('idle')}>
               Try again

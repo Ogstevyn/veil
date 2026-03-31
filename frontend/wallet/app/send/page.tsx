@@ -44,9 +44,13 @@ export default function SendPage() {
       setHasCamera(true)
     }
 
-    // Fetch available balances to populate asset selector
+    // Fetch available balances — use the fee-payer G... account since
+    // Horizon doesn't support loadAccount for C... contract addresses.
+    const signerPublicKey = sessionStorage.getItem('veil_signer_secret')
+      ? Keypair.fromSecret(sessionStorage.getItem('veil_signer_secret')!).publicKey()
+      : localStorage.getItem('veil_signer_public_key') ?? addr
     const server = new Server('https://horizon-testnet.stellar.org')
-    server.loadAccount(addr).then(account => {
+    server.loadAccount(signerPublicKey).then(account => {
       const list: WalletAsset[] = account.balances.map(b => {
         if (b.asset_type === 'native') {
           return { code: 'XLM', issuer: null, contractId: Asset.native().contractId(Networks.TESTNET) }
@@ -66,8 +70,10 @@ export default function SendPage() {
   }, [router])
 
   function validateForm(): boolean {
-    if (!recipient.startsWith('G') || recipient.length !== 56) return false
-    if (isNaN(parseFloat(amount)) || parseFloat(amount) <= 0)  return false
+    // Accept both classic G... accounts and C... Soroban contract addresses
+    const validAddress = (recipient.startsWith('G') || recipient.startsWith('C')) && recipient.length === 56
+    if (!validAddress) return false
+    if (isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) return false
     if (!selectedAsset) return false
     return true
   }
@@ -269,7 +275,7 @@ export default function SendPage() {
                 <input
                   className="input-field mono"
                   type="text"
-                  placeholder="G..."
+                  placeholder="G... or C..."
                   value={recipient}
                   onChange={e => setRecipient(e.target.value.trim())}
                   autoComplete="off"
