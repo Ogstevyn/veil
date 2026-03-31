@@ -101,10 +101,12 @@ export default function DashboardPage() {
         const native  = account.balances.find(b => b.asset_type === 'native')
         feePayerXlm   = native ? parseFloat(native.balance) : 0
 
-        // Transaction history (fee-payer + wallet address)
-        type HorizonPayment = {
-          id: string; type: string; from: string; to: string
-          amount: string; asset_type: string; asset_code?: string
+        // Transaction history (fee-payer account)
+        type HorizonOp = {
+          id: string; type: string
+          from?: string; to?: string; funder?: string; account?: string
+          amount?: string; starting_balance?: string
+          asset_type?: string; asset_code?: string
           created_at: string; transaction_hash: string
           transaction?: { memo?: string }
         }
@@ -116,18 +118,31 @@ export default function DashboardPage() {
           .order('desc')
           .call()
 
-        txRecords = (payments.records as HorizonPayment[])
-          .filter(p => p.type === 'payment')
-          .map(p => ({
-            id:           p.id,
-            type:         p.from === signerPublicKey ? 'sent' : 'received',
-            amount:       p.amount,
-            asset:        p.asset_type === 'native' ? 'XLM' : (p.asset_code ?? ''),
-            counterparty: p.from === signerPublicKey ? p.to : p.from,
-            timestamp:    Math.floor(new Date(p.created_at).getTime() / 1000),
-            hash:         p.transaction_hash,
-            memo:         p.transaction?.memo,
-          }))
+        txRecords = (payments.records as HorizonOp[])
+          .filter(p => p.type === 'payment' || p.type === 'create_account')
+          .map(p => {
+            if (p.type === 'create_account') {
+              return {
+                id:           p.id,
+                type:         'received' as const,
+                amount:       p.starting_balance ?? '0',
+                asset:        'XLM',
+                counterparty: p.funder ?? 'Friendbot',
+                timestamp:    Math.floor(new Date(p.created_at).getTime() / 1000),
+                hash:         p.transaction_hash,
+              }
+            }
+            return {
+              id:           p.id,
+              type:         p.from === signerPublicKey ? 'sent' : 'received',
+              amount:       p.amount ?? '0',
+              asset:        p.asset_type === 'native' ? 'XLM' : (p.asset_code ?? ''),
+              counterparty: p.from === signerPublicKey ? (p.to ?? '') : (p.from ?? ''),
+              timestamp:    Math.floor(new Date(p.created_at).getTime() / 1000),
+              hash:         p.transaction_hash,
+              memo:         p.transaction?.memo,
+            }
+          })
       } catch { /* not yet funded */ }
     }
 
@@ -189,6 +204,13 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchData()
+  }, [fetchData])
+
+  // Re-fetch when user navigates back to this tab/page (e.g. after sending)
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchData() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [fetchData])
 
   const xlmBalance = assets.find(a => a.code === 'XLM')?.balance ?? null
@@ -380,9 +402,21 @@ export default function DashboardPage() {
 
         {/* ── Activity section ── */}
         <section>
-          <h2 style={{ fontSize: '0.75rem', fontFamily: 'Anton, Impact, sans-serif', color: 'var(--warm-grey)', letterSpacing: '0.08em', marginBottom: '0.75rem' }}>
-            ACTIVITY
-          </h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+            <h2 style={{ fontSize: '0.75rem', fontFamily: 'Anton, Impact, sans-serif', color: 'var(--warm-grey)', letterSpacing: '0.08em' }}>
+              ACTIVITY
+            </h2>
+            <button
+              onClick={() => fetchData()}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(246,247,248,0.4)', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.375rem', padding: '0.25rem' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M1 4v6h6M23 20v-6h-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              Refresh
+            </button>
+          </div>
           {!loading && transactions.length === 0 && (
             <div className="card" style={{ textAlign: 'center', padding: '2rem' }}>
               <p style={{ fontSize: '0.875rem', color: 'rgba(246,247,248,0.4)' }}>
