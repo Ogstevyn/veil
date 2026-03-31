@@ -46,18 +46,22 @@ export default function SwapPage() {
 
   // ── Load session ──
   useEffect(() => {
-    const addr = sessionStorage.getItem('veil_address')
+    const addr = sessionStorage.getItem('invisible_wallet_address')
     if (!addr) {
-      router.replace('/')
+      router.replace('/lock')
       return
     }
     setWalletAddress(addr)
     fetchBalances(addr)
   }, [router])
 
-  const fetchBalances = async (addr: string) => {
+  const fetchBalances = async (_addr: string) => {
     try {
-      const res = await fetch(`${horizonUrl}/accounts/${addr}`)
+      const signerSecret = sessionStorage.getItem('veil_signer_secret')
+      const accountAddr = signerSecret
+        ? Keypair.fromSecret(signerSecret).publicKey()
+        : (localStorage.getItem('veil_signer_public_key') || _addr)
+      const res = await fetch(`${horizonUrl}/accounts/${accountAddr}`)
       if (res.ok) {
         const data = await res.json()
         const assets: StellarAsset[] = data.balances.map((b: any) => ({
