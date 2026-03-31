@@ -3,82 +3,140 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { VeilLogo } from '@/components/VeilLogo'
-import { computeWalletAddress, hexToUint8Array } from '@veil/utils'
-import { rpc as SorobanRpc, xdr } from '@stellar/stellar-sdk'
+import { derToRawSignature, bufferToHex } from '@veil/utils'
+import {
+  rpc as SorobanRpc, Contract, TransactionBuilder, BASE_FEE,
+  Account, Keypair, Networks, scValToNative,
+} from '@stellar/stellar-sdk'
 
-const CONFIG = {
-  rpcUrl: 'https://soroban-testnet.stellar.org',
-  networkPassphrase: 'Test SDF Network ; September 2015',
-  factoryAddress: process.env.NEXT_PUBLIC_FACTORY_CONTRACT_ID ?? '',
-}
+const RPC_URL            = 'https://soroban-testnet.stellar.org'
+const NETWORK_PASSPHRASE = Networks.TESTNET
+const FACTORY_ADDRESS    = process.env.NEXT_PUBLIC_FACTORY_CONTRACT_ID ?? ''
 
 type Step = 'idle' | 'authenticating' | 'done' | 'error'
 
 export default function RecoverPage() {
   const router = useRouter()
-  const [step, setStep] = useState<Step>('idle')
-  const [error, setError] = useState<string | null>(null)
+  const [step, setStep]               = useState<Step>('idle')
+  const [error, setError]             = useState<string | null>(null)
+  const [walletInput, setWalletInput] = useState('')
 
   async function handleRecover() {
+    const walletAddress = walletInput.trim()
+    if (!walletAddress.startsWith('C') || walletAddress.length !== 56) {
+      setError('Enter a valid C... wallet address.')
+      return
+    }
+
     setError(null)
     setStep('authenticating')
-    try {
-      // ── Step 1: get stored passkey metadata ──────────────────────────────
-      const keyId        = localStorage.getItem('invisible_wallet_key_id')
-      const publicKeyHex = localStorage.getItem('invisible_wallet_public_key')
 
-      if (!keyId || !publicKeyHex) {
-        throw new Error(
-          'No passkey data found on this device. Recovery is only possible on the device where you originally registered, or through guardian recovery.'
-        )
+    try {
+      const server = new SorobanRpc.Server(RPC_URL)
+
+      // ── 1. Fetch on-chain signers ────────────────────────────────────────
+      const dummyKp      = Keypair.random()
+      const sourceAcct   = new Account(dummyKp.publicKey(), '0')
+      const walletContract = new Contract(walletAddress)
+
+      const tx = new TransactionBuilder(sourceAcct, {
+        fee: BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(walletContract.call('get_signers'))
+        .setTimeout(30)
+        .build()
+
+      const sim = await server.simulateTransaction(tx)
+      if (SorobanRpc.Api.isSimulationError(sim)) {
+        throw new Error('Could not read wallet on-chain. Check the address and try again.')
       }
 
-      // ── Step 2: prompt WebAuthn assertion to verify identity ─────────────
-      const b64 = keyId.replace(/-/g, '+').replace(/_/g, '/')
-      const binary = atob(b64)
-      const idBuffer = new Uint8Array(binary.length)
-      for (let i = 0; i < binary.length; i++) idBuffer[i] = binary.charCodeAt(i)
+      const simResult  = (sim as SorobanRpc.Api.SimulateTransactionSuccessResponse).result
+      if (!simResult) throw new Error('No result from contract simulation.')
 
+      const signersMap = scValToNative(simResult.retval) as Map<number, Uint8Array>
+      const publicKeys = Array.from(signersMap.values())
+      if (publicKeys.length === 0) throw new Error('No signers found on this wallet.')
+
+      // ── 2. Discoverable passkey assertion ────────────────────────────────
+      // Empty allowCredentials lets the OS show ALL available passkeys so
+      // the user can pick the right one even on a new device.
       const challenge = crypto.getRandomValues(new Uint8Array(32))
-      await navigator.credentials.get({
+      const assertion = await navigator.credentials.get({
         publicKey: {
           challenge,
-          allowCredentials: [{ id: idBuffer, type: 'public-key' }],
+          allowCredentials: [],
           userVerification: 'required',
         },
-      })
+      }) as PublicKeyCredential | null
 
-      // ── Step 3: derive wallet address from stored public key ─────────────
-      let walletAddress = localStorage.getItem('invisible_wallet_address')
+      if (!assertion) throw new Error('Passkey prompt was cancelled.')
 
-      if (!walletAddress) {
-        // Address was cleared — recompute from stored public key
-        const pubKeyBytes = hexToUint8Array(publicKeyHex)
-        walletAddress = computeWalletAddress(CONFIG.factoryAddress, pubKeyBytes, CONFIG.networkPassphrase)
-        // Verify it actually exists on-chain
-        const server = new SorobanRpc.Server(CONFIG.rpcUrl)
-        await server.getContractData(
-          walletAddress,
-          xdr.ScVal.scvLedgerKeyContractInstance(),
-          SorobanRpc.Durability.Persistent
-        )
-        // Restore to localStorage
-        localStorage.setItem('invisible_wallet_address', walletAddress)
+      const response      = assertion.response as AuthenticatorAssertionResponse
+      const authData      = new Uint8Array(response.authenticatorData)
+      const clientDataJSON = new Uint8Array(response.clientDataJSON)
+      const sigDer        = new Uint8Array(response.signature)
+      const rawSig        = derToRawSignature(sigDer)
+
+      // ── 3. Verify signature against each on-chain public key ─────────────
+      // WebAuthn signed: SHA-256(authData || SHA-256(clientDataJSON))
+      // SubtleCrypto ECDSA hashes internally so we pass authData || SHA-256(clientDataJSON)
+      const clientDataHash = new Uint8Array(
+        await crypto.subtle.digest('SHA-256', clientDataJSON)
+      )
+      const message = new Uint8Array([...authData, ...clientDataHash])
+
+      let matchedHex: string | null = null
+
+      for (const pubKeyBytes of publicKeys) {
+        try {
+          const cryptoKey = await crypto.subtle.importKey(
+            'raw',
+            pubKeyBytes,
+            { name: 'ECDSA', namedCurve: 'P-256' },
+            false,
+            ['verify']
+          )
+          const valid = await crypto.subtle.verify(
+            { name: 'ECDSA', hash: { name: 'SHA-256' } },
+            cryptoKey,
+            rawSig,
+            message
+          )
+          if (valid) {
+            matchedHex = bufferToHex(pubKeyBytes)
+            break
+          }
+        } catch {
+          // Try next key
+        }
       }
 
-      // ── Step 4: restore session ──────────────────────────────────────────
+      if (!matchedHex) {
+        throw new Error(
+          'This passkey does not match any signer on this wallet. Make sure you are using the correct passkey and wallet address.'
+        )
+      }
+
+      // ── 4. Restore localStorage + session ────────────────────────────────
+      localStorage.setItem('invisible_wallet_address',    walletAddress)
+      localStorage.setItem('invisible_wallet_key_id',     assertion.id)
+      localStorage.setItem('invisible_wallet_public_key', matchedHex)
+      localStorage.setItem('veil_signer_public_key',
+        localStorage.getItem('veil_signer_public_key') ?? '')
       sessionStorage.setItem('invisible_wallet_address', walletAddress)
 
       setStep('done')
       setTimeout(() => router.push('/dashboard'), 800)
+
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
-      // NotAllowedError = user cancelled or biometric failed
-      if (msg.includes('NotAllowedError') || msg.includes('not allowed')) {
-        setError('Biometric verification was cancelled or failed. Please try again.')
-      } else {
-        setError(msg)
-      }
+      setError(
+        msg.includes('NotAllowedError') || msg.includes('not allowed')
+          ? 'Biometric verification was cancelled. Please try again.'
+          : msg
+      )
       setStep('error')
     }
   }
@@ -87,22 +145,50 @@ export default function RecoverPage() {
     <div className="wallet-shell" style={{ justifyContent: 'center', alignItems: 'center', padding: '2rem 1.25rem', minHeight: '100dvh' }}>
       <div style={{ maxWidth: 400, width: '100%' }}>
 
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginBottom: '3rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginBottom: '2.5rem' }}>
           <VeilLogo size={48} />
           <div style={{ textAlign: 'center' }}>
             <h1 style={{ fontFamily: 'Lora, Georgia, serif', fontWeight: 600, fontStyle: 'italic', fontSize: '1.75rem' }}>
               Recover wallet
             </h1>
-            <p style={{ fontSize: '0.875rem', color: 'rgba(246,247,248,0.4)', marginTop: '0.375rem' }}>
-              Authenticate with your existing passkey
+            <p style={{ fontSize: '0.875rem', color: 'rgba(246,247,248,0.4)', marginTop: '0.375rem', lineHeight: 1.6 }}>
+              Enter your wallet address, then verify with your passkey
             </p>
           </div>
         </div>
 
-        {step === 'idle' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <button className="btn-gold" onClick={handleRecover}>
-              Use passkey to recover
+        {(step === 'idle' || step === 'error') && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'rgba(246,247,248,0.4)', display: 'block', marginBottom: '0.5rem', fontFamily: 'Anton, Impact, sans-serif', letterSpacing: '0.06em' }}>
+                WALLET ADDRESS
+              </label>
+              <input
+                className="input-field mono"
+                type="text"
+                placeholder="C..."
+                value={walletInput}
+                onChange={e => { setWalletInput(e.target.value.trim()); setError(null) }}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p style={{ fontSize: '0.75rem', color: 'rgba(246,247,248,0.3)', marginTop: '0.5rem', lineHeight: 1.5 }}>
+                Find this on another device where your wallet is open — it starts with C.
+              </p>
+            </div>
+
+            {error && (
+              <div style={{ borderRadius: 10, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', padding: '0.75rem 1rem' }}>
+                <p style={{ fontSize: '0.8125rem', color: 'rgba(252,165,165,1)', lineHeight: 1.5 }}>{error}</p>
+              </div>
+            )}
+
+            <button
+              className="btn-gold"
+              onClick={handleRecover}
+              disabled={walletInput.length < 10}
+            >
+              Verify with passkey
             </button>
             <button className="btn-ghost" onClick={() => router.push('/')}>
               Back
@@ -129,18 +215,7 @@ export default function RecoverPage() {
               <path d="M13 20.5l5 5 9-9" stroke="var(--teal)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             <p style={{ fontWeight: 500 }}>Wallet recovered</p>
-          </div>
-        )}
-
-        {step === 'error' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <div className="card" style={{ textAlign: 'center' }}>
-              <p style={{ fontWeight: 500, marginBottom: '0.5rem' }}>Recovery failed</p>
-              <p style={{ fontSize: '0.8125rem', color: 'rgba(246,247,248,0.4)', lineHeight: 1.6 }}>{error}</p>
-            </div>
-            <button className="btn-ghost" onClick={() => setStep('idle')}>
-              Try again
-            </button>
+            <p style={{ fontSize: '0.8125rem', color: 'rgba(246,247,248,0.4)', marginTop: '0.375rem' }}>Redirecting to dashboard...</p>
           </div>
         )}
       </div>
