@@ -67,9 +67,9 @@ export default function OnboardingPage() {
       // Persist minimal session to sessionStorage for the dashboard
       sessionStorage.setItem('invisible_wallet_address', deployed.walletAddress)
       sessionStorage.setItem('veil_signer_secret', signerSecret)
-      // Store the fee-payer public key in localStorage so it survives browser close
-      // (needed for faucet and balance display after re-authentication).
+      // Store fee-payer keys in localStorage so they survive lock/unlock cycles.
       localStorage.setItem('veil_signer_public_key', signerKeypair.publicKey())
+      localStorage.setItem('veil_signer_secret', signerSecret)
 
       setAddress(deployed.walletAddress)
       setStep('done')

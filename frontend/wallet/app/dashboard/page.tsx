@@ -166,9 +166,12 @@ export default function DashboardPage() {
           toAddress: string | null; amount: string; ledger: number
           ledgerClosedAt: string; txHash: string; contractId: string
         }
+        // Incoming: to wallet C... address
+        // Outgoing: from fee-payer G... address (sends go from fee-payer, not contract)
+        const feePayerAddr = signerPublicKey || walletAddress
         const [inRes, outRes] = await Promise.all([
           fetch(`${wraithUrl}/transfers/incoming/${walletAddress}?limit=20`),
-          fetch(`${wraithUrl}/transfers/outgoing/${walletAddress}?limit=20`),
+          fetch(`${wraithUrl}/transfers/outgoing/${feePayerAddr}?limit=20`),
         ])
         const inData  = inRes.ok  ? await inRes.json()  as { transfers: WraithTransfer[] } : { transfers: [] }
         const outData = outRes.ok ? await outRes.json() as { transfers: WraithTransfer[] } : { transfers: [] }

@@ -68,6 +68,9 @@ export default function LockPage() {
         return
       }
       sessionStorage.setItem('invisible_wallet_address', result.walletAddress)
+      // Restore fee-payer secret so send/swap work after unlock
+      const storedSecret = localStorage.getItem('veil_signer_secret')
+      if (storedSecret) sessionStorage.setItem('veil_signer_secret', storedSecret)
 
       router.replace('/dashboard')
 
