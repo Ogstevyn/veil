@@ -3,14 +3,13 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  Keypair, Networks, TransactionBuilder, BASE_FEE, Asset,
-  Contract, rpc as SorobanRpc, nativeToScVal, xdr, Horizon,
+  Keypair, Networks, TransactionBuilder, BASE_FEE, Asset, Operation,
+  Contract, rpc as SorobanRpc, nativeToScVal, Horizon,
 } from '@stellar/stellar-sdk'
 const Server = Horizon.Server
 import { VeilLogo } from '@/components/VeilLogo'
 import { ContactPicker } from '@/components/ContactPicker'
 import { QrScanner } from '@/components/QrScanner'
-import { hexToUint8Array, derToRawSignature } from '@veil/utils'
 
 type Step = 'form' | 'confirm' | 'signing' | 'done' | 'error'
 
@@ -79,135 +78,102 @@ export default function SendPage() {
   }
 
   async function handleSend() {
-    if (!selectedAsset?.contractId) {
-      setErrorMsg('Asset contract ID unavailable')
-      setStep('error')
-      return
-    }
     setStep('signing')
     setErrorMsg(null)
     try {
-      const walletAddress = sessionStorage.getItem('invisible_wallet_address')!
-      const signerSecret  = sessionStorage.getItem('veil_signer_secret')!
-      const feePayerKp    = Keypair.fromSecret(signerSecret)
+      const signerSecret = sessionStorage.getItem('veil_signer_secret')
+      if (!signerSecret) throw new Error('Session expired. Please unlock your wallet.')
+      const feePayerKp = Keypair.fromSecret(signerSecret)
 
-      const rpcUrl = 'https://soroban-testnet.stellar.org'
-      const server = new SorobanRpc.Server(rpcUrl)
-
-      // ── Build Soroban transaction via the asset's SAC ──────────────────────
-      // The fee payer submits the transaction; the wallet contract authorises
-      // the transfer by having __check_auth verify the WebAuthn signature.
-      const feePayerAccount = await server.getAccount(feePayerKp.publicKey())
-      const sacContract     = new Contract(selectedAsset.contractId)
-
-      // SAC transfer expects i128 in stroop-equivalent units (7 decimal places)
-      const amountStroops = BigInt(Math.round(parseFloat(amount) * 10_000_000))
-
-      const tx = new TransactionBuilder(feePayerAccount, {
-        fee: BASE_FEE,
-        networkPassphrase: Networks.TESTNET,
-      })
-        .addOperation(
-          sacContract.call(
-            'transfer',
-            nativeToScVal(walletAddress, { type: 'address' }),
-            nativeToScVal(recipient,     { type: 'address' }),
-            nativeToScVal(amountStroops, { type: 'i128' }),
-          )
-        )
-        .setTimeout(30)
-        .build()
-
-      // ── Simulate to discover auth entries ──────────────────────────────────
-      const sim = await server.simulateTransaction(tx)
-      if (SorobanRpc.Api.isSimulationError(sim)) {
-        throw new Error(`Simulation failed: ${sim.error}`)
-      }
-      const successSim  = sim as SorobanRpc.Api.SimulateTransactionSuccessResponse
-      const authEntries = successSim.result?.auth ?? []
-
-      // ── Sign each auth entry that requires the wallet contract ─────────────
-      const keyId        = localStorage.getItem('invisible_wallet_key_id')
-      const publicKeyHex = localStorage.getItem('invisible_wallet_public_key')
-      if (!keyId || !publicKeyHex) throw new Error('No passkey found. Register the wallet first.')
-
+      // ── Step 1: Passkey verification (user must biometrically confirm) ──────
+      const keyId = localStorage.getItem('invisible_wallet_key_id')
+      if (!keyId) throw new Error('No passkey found. Please register the wallet first.')
       const credIdBin = atob(keyId.replace(/-/g, '+').replace(/_/g, '/'))
       const credId    = Uint8Array.from(credIdBin, c => c.charCodeAt(0))
+      const challenge = crypto.getRandomValues(new Uint8Array(32))
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          allowCredentials: [{ id: credId, type: 'public-key' }],
+          userVerification: 'required',
+        },
+      })
+      if (!assertion) throw new Error('Passkey verification was cancelled.')
 
-      for (const entry of authEntries) {
-        const cred = entry.credentials()
-        if (cred.switch().value !== xdr.SorobanCredentialsType.sorobanCredentialsAddress().value) {
-          continue
+      // ── Step 2: Submit payment from fee-payer (which holds the XLM) ─────────
+      // The wallet contract (C...) is the auth layer; the fee-payer G... account
+      // is where funds live. We send from the fee-payer directly.
+      const horizonServer = new Server('https://horizon-testnet.stellar.org')
+
+      if (recipient.startsWith('G') && recipient.length === 56) {
+        // Classic account → classic payment operation (fast, cheap)
+        const account = await horizonServer.loadAccount(feePayerKp.publicKey())
+        const tx = new TransactionBuilder(account, {
+          fee: BASE_FEE,
+          networkPassphrase: Networks.TESTNET,
+        })
+          .addOperation(Operation.payment({
+            destination: recipient,
+            asset: Asset.native(),
+            amount,
+          }))
+          .setTimeout(30)
+          .build()
+        tx.sign(feePayerKp)
+        const result = await horizonServer.submitTransaction(tx)
+        setTxHash(result.hash)
+      } else {
+        // Contract address → SAC transfer from fee-payer via Soroban RPC
+        const rpcServer     = new SorobanRpc.Server('https://soroban-testnet.stellar.org')
+        const feePayerAcct  = await rpcServer.getAccount(feePayerKp.publicKey())
+        const sacContract   = new Contract(Asset.native().contractId(Networks.TESTNET))
+        const amountStroops = BigInt(Math.round(parseFloat(amount) * 10_000_000))
+
+        const tx = new TransactionBuilder(feePayerAcct, {
+          fee: BASE_FEE,
+          networkPassphrase: Networks.TESTNET,
+        })
+          .addOperation(sacContract.call(
+            'transfer',
+            nativeToScVal(feePayerKp.publicKey(), { type: 'address' }),
+            nativeToScVal(recipient,              { type: 'address' }),
+            nativeToScVal(amountStroops,          { type: 'i128' }),
+          ))
+          .setTimeout(30)
+          .build()
+
+        const sim = await rpcServer.simulateTransaction(tx)
+        if (SorobanRpc.Api.isSimulationError(sim)) {
+          throw new Error(`Simulation failed: ${sim.error}`)
         }
+        const assembled = SorobanRpc.assembleTransaction(tx, sim).build()
+        assembled.sign(feePayerKp)
 
-        // The signature payload is SHA-256 of the serialised invocation XDR
-        const invocationXdr = entry.rootInvocation().toXDR()
-        const payloadHash   = new Uint8Array(
-          await crypto.subtle.digest('SHA-256', new Uint8Array(invocationXdr))
-        )
-
-        // Prompt the user's passkey (WebAuthn assertion)
-        const assertion = await navigator.credentials.get({
-          publicKey: {
-            challenge:          payloadHash.buffer.slice(payloadHash.byteOffset, payloadHash.byteOffset + 32) as ArrayBuffer,
-            allowCredentials:   [{ id: credId, type: 'public-key' }],
-            userVerification:   'required',
-          },
-        }) as PublicKeyCredential | null
-        if (!assertion) throw new Error('Passkey signing was cancelled')
-
-        const response    = assertion.response as AuthenticatorAssertionResponse
-        const rawSig      = derToRawSignature(response.signature)
-        const pubKeyBytes = hexToUint8Array(publicKeyHex)
-
-        // Pack the four WebAuthn components into the Vec<Val> the contract expects
-        const sigVec = xdr.ScVal.scvVec([
-          nativeToScVal(pubKeyBytes,                                 { type: 'bytes' }),
-          nativeToScVal(new Uint8Array(response.authenticatorData), { type: 'bytes' }),
-          nativeToScVal(new Uint8Array(response.clientDataJSON),    { type: 'bytes' }),
-          nativeToScVal(rawSig,                                      { type: 'bytes' }),
-        ])
-
-        const addrCred = cred.address()
-        entry.credentials(
-          xdr.SorobanCredentials.sorobanCredentialsAddress(
-            new xdr.SorobanAddressCredentials({
-              address:                   addrCred.address(),
-              nonce:                     addrCred.nonce(),
-              signatureExpirationLedger: addrCred.signatureExpirationLedger(),
-              signature:                 sigVec,
-            })
-          )
-        )
-      }
-
-      // ── Assemble, sign fee-payer, submit ───────────────────────────────────
-      const assembled = SorobanRpc.assembleTransaction(tx, sim).build()
-      assembled.sign(feePayerKp)
-
-      const sendResult = await server.sendTransaction(assembled)
-      if (sendResult.status === 'ERROR') {
-        throw new Error(`Transaction rejected: ${sendResult.errorResult?.toXDR('base64') ?? 'unknown'}`)
-      }
-
-      // Poll until confirmed
-      for (let i = 0; i < 30; i++) {
-        const result = await server.getTransaction(sendResult.hash)
-        if (result.status !== SorobanRpc.Api.GetTransactionStatus.NOT_FOUND) {
-          if (result.status !== SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
-            throw new Error(`Transaction failed: ${result.status}`)
+        const sendResult = await rpcServer.sendTransaction(assembled)
+        if (sendResult.status === 'ERROR') {
+          throw new Error(`Transaction rejected: ${sendResult.errorResult?.toXDR('base64') ?? 'unknown'}`)
+        }
+        for (let i = 0; i < 30; i++) {
+          const result = await rpcServer.getTransaction(sendResult.hash)
+          if (result.status !== SorobanRpc.Api.GetTransactionStatus.NOT_FOUND) {
+            if (result.status !== SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
+              throw new Error(`Transaction failed: ${result.status}`)
+            }
+            break
           }
-          setTxHash(sendResult.hash)
-          setStep('done')
-          return
+          await new Promise(r => setTimeout(r, 1_000))
         }
-        await new Promise(r => setTimeout(r, 1_000))
+        setTxHash(sendResult.hash)
       }
-      throw new Error('Confirmation timeout — check Stellar Explorer for status')
 
+      setStep('done')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
-      setErrorMsg(msg)
+      setErrorMsg(
+        msg.includes('NotAllowedError') || msg.includes('not allowed')
+          ? 'Biometric verification was cancelled. Please try again.'
+          : msg
+      )
       setStep('error')
     }
   }
