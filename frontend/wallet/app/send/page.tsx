@@ -11,6 +11,7 @@ import { VeilLogo } from '@/components/VeilLogo'
 import { ContactPicker } from '@/components/ContactPicker'
 import { QrScanner } from '@/components/QrScanner'
 import { useInactivityLock } from '@/hooks/useInactivityLock'
+import { beginTx, endTx } from '@/lib/txState'
 
 type Step = 'form' | 'confirm' | 'signing' | 'done' | 'error'
 
@@ -87,12 +88,17 @@ export default function SendPage() {
   }
 
   async function handleSend() {
+    beginTx()
     setStep('signing')
     setErrorMsg(null)
     try {
       const signerSecret = sessionStorage.getItem('veil_signer_secret')
         || localStorage.getItem('veil_signer_secret')
-      if (!signerSecret) { router.replace('/lock'); return }
+      if (!signerSecret) {
+        setErrorMsg('Signing key not found. Return to dashboard and tap "Fund wallet" to set up a fee-payer.')
+        setStep('error')
+        return
+      }
       const feePayerKp = Keypair.fromSecret(signerSecret)
 
       // ── Step 1: Passkey verification (user must biometrically confirm) ──────
@@ -185,6 +191,8 @@ export default function SendPage() {
           : msg
       )
       setStep('error')
+    } finally {
+      endTx()
     }
   }
 

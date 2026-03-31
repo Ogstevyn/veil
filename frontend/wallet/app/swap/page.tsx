@@ -6,6 +6,7 @@ import { Keypair, Networks, TransactionBuilder, BASE_FEE, Operation, Asset, Memo
 const Server = Horizon.Server
 import { VeilLogo } from '@/components/VeilLogo'
 import { useInactivityLock } from '@/hooks/useInactivityLock'
+import { beginTx, endTx } from '@/lib/txState'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const DEBOUNCE_MS = 500
@@ -121,12 +122,17 @@ export default function SwapPage() {
 
   // ── Swap Execution ──
   async function handleSwap() {
+    beginTx()
     setStep('swapping')
     setErrorMsg(null)
     try {
       const signerSecret = sessionStorage.getItem('veil_signer_secret')
         || localStorage.getItem('veil_signer_secret')
-      if (!signerSecret) { router.replace('/lock'); return }
+      if (!signerSecret) {
+        setErrorMsg('Signing key not found. Return to dashboard and tap "Fund wallet" to set up a fee-payer.')
+        setStep('error')
+        return
+      }
       const signerKeypair = Keypair.fromSecret(signerSecret)
       const account = await server.loadAccount(walletAddress!)
 
@@ -161,6 +167,8 @@ export default function SwapPage() {
       const msg = err instanceof Error ? err.message : String(err)
       setErrorMsg(msg)
       setStep('error')
+    } finally {
+      endTx()
     }
   }
 
