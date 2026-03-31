@@ -82,7 +82,8 @@ export default function SendPage() {
     setErrorMsg(null)
     try {
       const signerSecret = sessionStorage.getItem('veil_signer_secret')
-      if (!signerSecret) throw new Error('Session expired. Please unlock your wallet.')
+        || localStorage.getItem('veil_signer_secret')
+      if (!signerSecret) { router.replace('/lock'); return }
       const feePayerKp = Keypair.fromSecret(signerSecret)
 
       // ── Step 1: Passkey verification (user must biometrically confirm) ──────

@@ -122,7 +122,9 @@ export default function SwapPage() {
     setStep('swapping')
     setErrorMsg(null)
     try {
-      const signerSecret = sessionStorage.getItem('veil_signer_secret')!
+      const signerSecret = sessionStorage.getItem('veil_signer_secret')
+        || localStorage.getItem('veil_signer_secret')
+      if (!signerSecret) { router.replace('/lock'); return }
       const signerKeypair = Keypair.fromSecret(signerSecret)
       const account = await server.loadAccount(walletAddress!)
 
