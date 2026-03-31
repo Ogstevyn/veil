@@ -28,6 +28,32 @@ export default function LockPage() {
     setIsUnlocking(true)
 
     try {
+      // Step 1 — Require a real WebAuthn biometric assertion.
+      // wallet.login() only checks localStorage + chain; it doesn't prompt the
+      // device. We call navigator.credentials.get() with userVerification:
+      // 'required' so the OS always shows Face ID / fingerprint / Windows Hello.
+      const keyId = localStorage.getItem('invisible_wallet_key_id')
+      if (!keyId) {
+        setError('No passkey found. Please register again.')
+        return
+      }
+
+      // Decode base64url key ID → ArrayBuffer
+      const b64 = keyId.replace(/-/g, '+').replace(/_/g, '/')
+      const binary = atob(b64)
+      const idBuffer = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) idBuffer[i] = binary.charCodeAt(i)
+
+      const challenge = crypto.getRandomValues(new Uint8Array(32))
+      await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          allowCredentials: [{ id: idBuffer, type: 'public-key' }],
+          userVerification: 'required',
+        },
+      })
+
+      // Step 2 — Biometric confirmed; verify wallet exists on-chain and restore session.
       const result = await wallet.login()
 
       if (!result?.walletAddress) {
@@ -35,8 +61,6 @@ export default function LockPage() {
         return
       }
 
-      // Restore session — sessionStorage is cleared on browser close, so we
-      // repopulate it here after the passkey assertion confirms identity.
       const existing = sessionStorage.getItem('invisible_wallet_address')
       if (existing && existing !== result.walletAddress) {
         sessionStorage.clear()

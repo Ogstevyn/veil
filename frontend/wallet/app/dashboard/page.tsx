@@ -60,6 +60,7 @@ export default function DashboardPage() {
   const [loading, setLoading]             = useState(true)
   const [isFunding, setIsFunding]         = useState(false)
   const [fundingError, setFundingError]   = useState<string | null>(null)
+  const [copied, setCopied]               = useState(false)
 
   const isTestnet = process.env.NEXT_PUBLIC_NETWORK === 'testnet'
 
@@ -173,9 +174,25 @@ export default function DashboardPage() {
           VEIL
         </span>
         {walletAddress && (
-          <span className="address-chip">
-            {walletAddress.slice(0, 6)}…{walletAddress.slice(-6)}
-          </span>
+          <button
+            onClick={async () => {
+              await navigator.clipboard.writeText(walletAddress)
+              setCopied(true)
+              setTimeout(() => setCopied(false), 2000)
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            title="Copy wallet address"
+          >
+            <span className="address-chip">
+              {walletAddress.slice(0, 6)}…{walletAddress.slice(-6)}
+            </span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ color: copied ? 'var(--teal)' : 'rgba(246,247,248,0.35)', flexShrink: 0 }}>
+              {copied
+                ? <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                : <><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="1.75"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" strokeWidth="1.75"/></>
+              }
+            </svg>
+          </button>
         )}
       </header>
 
