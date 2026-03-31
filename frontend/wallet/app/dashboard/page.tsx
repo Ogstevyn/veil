@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Horizon } from '@stellar/stellar-sdk'
+import { Horizon, Keypair } from '@stellar/stellar-sdk'
 const Server = Horizon.Server
 import { TxDetailSheet, type TxRecord } from '@/components/TxDetailSheet'
 
@@ -77,9 +77,18 @@ export default function DashboardPage() {
 
     const server = new Server(horizonUrl)
 
+    // The wallet contract address (C...) is a Soroban account — Horizon's
+    // loadAccount only works for classic G... accounts. Use the fee-payer
+    // keypair's G... address to query balances and activity instead.
+    const signerSecret    = sessionStorage.getItem('veil_signer_secret')
+    const signerPublicKey = signerSecret
+      ? Keypair.fromSecret(signerSecret).publicKey()
+      : localStorage.getItem('veil_signer_public_key')
+    const accountToLoad = signerPublicKey ?? walletAddress
+
     try {
       // ── Balances ────────────────────────────────────────────────────────────
-      const account = await server.loadAccount(walletAddress)
+      const account = await server.loadAccount(accountToLoad)
       const walletAssets: WalletAsset[] = account.balances.map(b => {
         if (b.asset_type === 'native') return { code: 'XLM', issuer: null, balance: b.balance }
         const issued = b as { asset_code: string; asset_issuer: string; balance: string }
@@ -90,7 +99,7 @@ export default function DashboardPage() {
       // ── Recent payments ──────────────────────────────────────────────────────
       const payments = await server
         .payments()
-        .forAccount(walletAddress)
+        .forAccount(accountToLoad)
         .limit(20)
         .order('desc')
         .call()
@@ -106,10 +115,10 @@ export default function DashboardPage() {
         .filter(p => p.type === 'payment')
         .map(p => ({
           id:           p.id,
-          type:         p.from === walletAddress ? 'sent' : 'received',
+          type:         p.from === accountToLoad ? 'sent' : 'received',
           amount:       p.amount,
           asset:        p.asset_type === 'native' ? 'XLM' : (p.asset_code ?? ''),
-          counterparty: p.from === walletAddress ? p.to : p.from,
+          counterparty: p.from === accountToLoad ? p.to : p.from,
           timestamp:    Math.floor(new Date(p.created_at).getTime() / 1000),
           hash:         p.transaction_hash,
           memo:         p.transaction?.memo,
@@ -130,16 +139,22 @@ export default function DashboardPage() {
   const xlmBalance = assets.find(a => a.code === 'XLM')?.balance ?? null
 
   const handleFund = async () => {
-    if (!walletAddress) return
     setIsFunding(true)
     setFundingError(null)
     try {
-      const res = await fetch(`https://friendbot.stellar.org/?addr=${walletAddress}`)
+      // Friendbot only funds classic G... accounts, not C... contract addresses.
+      // Derive the G... public key from session secret or fall back to localStorage.
+      const signerSecret    = sessionStorage.getItem('veil_signer_secret')
+      const signerPublicKey = signerSecret
+        ? Keypair.fromSecret(signerSecret).publicKey()
+        : localStorage.getItem('veil_signer_public_key')
+      if (!signerPublicKey) throw new Error('Fee-payer address not found. Please create a new wallet.')
+      const res = await fetch(`https://friendbot.stellar.org/?addr=${signerPublicKey}`)
       if (!res.ok) throw new Error('Friendbot failed')
       await new Promise(r => setTimeout(r, 2000))
       await fetchData()
-    } catch {
-      setFundingError('Funding failed. Please try again.')
+    } catch (err: unknown) {
+      setFundingError(err instanceof Error ? err.message : 'Funding failed. Please try again.')
     } finally {
       setIsFunding(false)
     }

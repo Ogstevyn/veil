@@ -6,9 +6,9 @@ import { LockKeyhole, Fingerprint, AlertCircle } from 'lucide-react'
 import { useInvisibleWallet } from '@veil/sdk'
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const FACTORY_ADDRESS    = process.env.NEXT_PUBLIC_FACTORY_ADDRESS    ?? ''
-const RPC_URL            = process.env.NEXT_PUBLIC_RPC_URL            ?? 'https://soroban-testnet.stellar.org'
-const NETWORK_PASSPHRASE = process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE ?? 'Test SDF Network ; September 2015'
+const FACTORY_ADDRESS    = process.env.NEXT_PUBLIC_FACTORY_CONTRACT_ID ?? ''
+const RPC_URL            = 'https://soroban-testnet.stellar.org'
+const NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015'
 
 // ── Lock screen ───────────────────────────────────────────────────────────────
 export default function LockPage() {
@@ -28,24 +28,22 @@ export default function LockPage() {
     setIsUnlocking(true)
 
     try {
-      // Security note: compare stored address before and after login() to prevent
-      // account-switching attacks via a different passkey on the unlock screen.
-      const storedAddress = sessionStorage.getItem('invisible_wallet_address')
+      const result = await wallet.login()
 
-      await wallet.login()
-
-      const restoredAddress = sessionStorage.getItem('invisible_wallet_address')
-
-      if (!restoredAddress) {
+      if (!result?.walletAddress) {
         setError('No wallet found. Please register again.')
         return
       }
 
-      if (storedAddress && restoredAddress !== storedAddress) {
+      // Restore session — sessionStorage is cleared on browser close, so we
+      // repopulate it here after the passkey assertion confirms identity.
+      const existing = sessionStorage.getItem('invisible_wallet_address')
+      if (existing && existing !== result.walletAddress) {
         sessionStorage.clear()
         setError('Account mismatch detected. Please register again.')
         return
       }
+      sessionStorage.setItem('invisible_wallet_address', result.walletAddress)
 
       router.replace('/dashboard')
 
