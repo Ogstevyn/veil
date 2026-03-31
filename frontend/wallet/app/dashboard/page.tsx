@@ -156,7 +156,53 @@ export default function DashboardPage() {
       } catch { /* not yet funded */ }
     }
 
-    // ── 3. Combine and display ───────────────────────────────────────────────
+    // ── 3. Wraith: incoming SAC transfers to the wallet contract ────────────
+    const wraithUrl = process.env.NEXT_PUBLIC_WRAITH_URL
+    if (wraithUrl) {
+      try {
+        type WraithTransfer = {
+          id: number; eventType: string; fromAddress: string | null
+          toAddress: string | null; amount: string; ledger: number
+          ledgerClosedAt: string; txHash: string; contractId: string
+        }
+        const [inRes, outRes] = await Promise.all([
+          fetch(`${wraithUrl}/transfers/incoming/${walletAddress}?limit=20`),
+          fetch(`${wraithUrl}/transfers/outgoing/${walletAddress}?limit=20`),
+        ])
+        const inData  = inRes.ok  ? await inRes.json()  as { transfers: WraithTransfer[] } : { transfers: [] }
+        const outData = outRes.ok ? await outRes.json() as { transfers: WraithTransfer[] } : { transfers: [] }
+
+        const wraithRecords: TxRecord[] = [
+          ...inData.transfers.map(t => ({
+            id:           `w-${t.id}`,
+            type:         'received' as const,
+            amount:       (Math.abs(Number(t.amount)) / 10_000_000).toFixed(7),
+            asset:        'XLM',
+            counterparty: t.fromAddress ?? 'unknown',
+            timestamp:    Math.floor(new Date(t.ledgerClosedAt).getTime() / 1000),
+            hash:         t.txHash,
+          })),
+          ...outData.transfers.map(t => ({
+            id:           `w-${t.id}`,
+            type:         'sent' as const,
+            amount:       (Math.abs(Number(t.amount)) / 10_000_000).toFixed(7),
+            asset:        'XLM',
+            counterparty: t.toAddress ?? 'unknown',
+            timestamp:    Math.floor(new Date(t.ledgerClosedAt).getTime() / 1000),
+            hash:         t.txHash,
+          })),
+        ]
+
+        // Merge Wraith records with Horizon records, deduplicate by hash, sort newest first
+        const merged = [...wraithRecords, ...txRecords]
+          .filter((tx, i, arr) => arr.findIndex(t => t.hash === tx.hash) === i)
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, 30)
+        txRecords = merged
+      } catch { /* Wraith offline — fall back to Horizon only */ }
+    }
+
+    // ── 4. Combine and display ───────────────────────────────────────────────
     const totalXlm = (contractXlm + feePayerXlm).toFixed(7)
     setAssets([{ code: 'XLM', issuer: null, balance: totalXlm }])
     setTransactions(txRecords)
