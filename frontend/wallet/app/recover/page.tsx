@@ -77,13 +77,13 @@ export default function RecoverPage() {
       const authData      = new Uint8Array(response.authenticatorData)
       const clientDataJSON = new Uint8Array(response.clientDataJSON)
       const sigDer        = new Uint8Array(response.signature)
-      const rawSig        = derToRawSignature(sigDer)
+      const rawSig        = derToRawSignature(sigDer.buffer.slice(sigDer.byteOffset, sigDer.byteOffset + sigDer.byteLength) as ArrayBuffer)
 
       // ── 3. Verify signature against each on-chain public key ─────────────
       // WebAuthn signed: SHA-256(authData || SHA-256(clientDataJSON))
       // SubtleCrypto ECDSA hashes internally so we pass authData || SHA-256(clientDataJSON)
       const clientDataHash = new Uint8Array(
-        await crypto.subtle.digest('SHA-256', clientDataJSON)
+        await crypto.subtle.digest('SHA-256', clientDataJSON.buffer as ArrayBuffer)
       )
       const message = new Uint8Array([...authData, ...clientDataHash])
 
@@ -93,7 +93,7 @@ export default function RecoverPage() {
         try {
           const cryptoKey = await crypto.subtle.importKey(
             'raw',
-            pubKeyBytes,
+            pubKeyBytes.buffer as ArrayBuffer,
             { name: 'ECDSA', namedCurve: 'P-256' },
             false,
             ['verify']
@@ -101,8 +101,8 @@ export default function RecoverPage() {
           const valid = await crypto.subtle.verify(
             { name: 'ECDSA', hash: { name: 'SHA-256' } },
             cryptoKey,
-            rawSig,
-            message
+            rawSig.buffer as ArrayBuffer,
+            message.buffer as ArrayBuffer
           )
           if (valid) {
             matchedHex = bufferToHex(pubKeyBytes)
