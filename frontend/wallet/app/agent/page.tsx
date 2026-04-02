@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Send, RefreshCw } from 'lucide-react'
 import { useInactivityLock } from '@/hooks/useInactivityLock'
 
 interface Message {
@@ -27,7 +26,7 @@ export default function AgentPage() {
     {
       role: 'agent',
       content:
-        "Hey! I'm your Veil agent. I can check prices, show your transfer history, and execute swaps — all with your approval. What would you like to do?",
+        "Hey! I'm your Veil agent. I can check prices, view transfer history, and execute swaps — all with your approval. What would you like to do?",
     },
   ])
   const [input, setInput] = useState('')
@@ -39,20 +38,15 @@ export default function AgentPage() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Wallet address + signer from session
   const walletAddress =
     typeof window !== 'undefined'
-      ? sessionStorage.getItem('veil_wallet_address') ?? ''
+      ? (sessionStorage.getItem('invisible_wallet_address') ?? '')
       : ''
 
-  // Connect WebSocket
   useEffect(() => {
     const wsUrl = process.env.NEXT_PUBLIC_AGENT_WS_URL ?? 'ws://localhost:3001'
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
-
-    ws.onopen = () => console.log('[agent] WS connected')
-    ws.onclose = () => console.log('[agent] WS disconnected')
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data)
@@ -79,7 +73,7 @@ export default function AgentPage() {
         setIsThinking(false)
         setMessages((prev) => [
           ...prev,
-          { role: 'agent', content: `Error: ${data.message}` },
+          { role: 'agent', content: `Something went wrong: ${data.message}` },
         ])
       }
     }
@@ -87,7 +81,6 @@ export default function AgentPage() {
     return () => ws.close()
   }, [])
 
-  // Scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isThinking])
@@ -115,10 +108,9 @@ export default function AgentPage() {
     if (!pendingTxXdr) return
     setApproving(true)
     try {
-      // Trigger passkey signing via the browser WebAuthn API
-      // The wallet uses the stored credential to sign the auth entry
-      const signerSecret = sessionStorage.getItem('veil_signer_secret')
-        ?? localStorage.getItem('veil_signer_secret')
+      const signerSecret =
+        sessionStorage.getItem('veil_signer_secret') ??
+        localStorage.getItem('veil_signer_secret')
 
       if (!signerSecret) {
         setMessages((prev) => [
@@ -128,17 +120,16 @@ export default function AgentPage() {
         return
       }
 
-      // Import Stellar SDK dynamically to avoid SSR issues
-      const { Keypair, TransactionBuilder, Networks, rpc: SorobanRpc } = await import('@stellar/stellar-sdk')
-      const { Transaction } = await import('@stellar/stellar-sdk')
-
+      const { Keypair, TransactionBuilder, rpc: SorobanRpc } = await import('@stellar/stellar-sdk')
       const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL ?? 'https://soroban-testnet.stellar.org'
-      const networkPassphrase = process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE ?? 'Test SDF Network ; September 2015'
-      const feePayerSecret = localStorage.getItem('veil_fee_payer_secret') ?? signerSecret
+      const networkPassphrase =
+        process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE ?? 'Test SDF Network ; September 2015'
+
+      const feePayerSecret =
+        localStorage.getItem('veil_fee_payer_secret') ?? signerSecret
       const feePayer = Keypair.fromSecret(feePayerSecret)
       const server = new SorobanRpc.Server(rpcUrl)
 
-      // Rebuild and submit the transaction using the fee-payer keypair
       const tx = TransactionBuilder.fromXDR(pendingTxXdr, networkPassphrase)
       tx.sign(feePayer)
 
@@ -148,7 +139,7 @@ export default function AgentPage() {
         ...prev,
         {
           role: 'agent',
-          content: `Transaction submitted! Hash: \`${result.hash}\`\n\nIt will settle in ~5 seconds.`,
+          content: `Transaction submitted.\n\nHash: ${result.hash}\n\nSettles in ~5 seconds.`,
         },
       ])
       setPendingTxXdr(null)
@@ -166,79 +157,104 @@ export default function AgentPage() {
   const clearHistory = () => {
     if (!walletAddress || !wsRef.current) return
     wsRef.current.send(JSON.stringify({ type: 'clear_history', walletAddress }))
-    setMessages([
-      {
-        role: 'agent',
-        content: 'History cleared. How can I help you?',
-      },
-    ])
+    setMessages([{ role: 'agent', content: 'History cleared. How can I help you?' }])
   }
 
   return (
-    <div className="flex flex-col h-screen bg-black text-white">
+    <div className="wallet-shell">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800">
+      <header className="wallet-nav">
         <button
           onClick={() => router.back()}
-          className="p-1.5 rounded-lg hover:bg-zinc-800 transition"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem', color: 'var(--warm-grey)', display: 'flex' }}
         >
-          <ArrowLeft size={18} className="text-zinc-400" />
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
         </button>
-        <div className="w-8 h-8 rounded-full bg-violet-600 flex items-center justify-center text-sm font-bold">
-          V
-        </div>
-        <div className="flex-1">
-          <div className="font-semibold text-sm">Veil Agent</div>
-          <div className="text-xs text-zinc-500">
-            Powered by Claude · x402 payments enabled
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+          <div style={{
+            width: '2rem', height: '2rem', borderRadius: '50%',
+            background: 'rgba(253,218,36,0.12)',
+            border: '1px solid rgba(253,218,36,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4zm0 10c-4 0-7 2-7 4v1h14v-1c0-2-3-4-7-4z" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--off-white)' }}>Veil Agent</div>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--warm-grey)' }}>Powered by Claude · x402 enabled</div>
           </div>
         </div>
+
         <button
           onClick={clearHistory}
-          className="p-1.5 rounded-lg hover:bg-zinc-800 transition"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem', color: 'var(--warm-grey)', display: 'flex' }}
           title="Clear history"
         >
-          <RefreshCw size={16} className="text-zinc-500" />
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M3 3v5h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
         </button>
-      </div>
+      </header>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '480px', margin: '0 auto', width: '100%' }}>
         {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                msg.role === 'user'
-                  ? 'bg-violet-600 text-white rounded-br-sm'
-                  : 'bg-zinc-800 text-zinc-100 rounded-bl-sm'
-              }`}
-            >
-              <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+          <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+            <div style={{
+              maxWidth: '82%',
+              padding: '0.75rem 1rem',
+              borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+              background: msg.role === 'user'
+                ? 'rgba(253,218,36,0.12)'
+                : 'var(--surface-md)',
+              border: `1px solid ${msg.role === 'user' ? 'rgba(253,218,36,0.22)' : 'var(--border-dim)'}`,
+              fontSize: '0.875rem',
+              lineHeight: 1.6,
+              color: 'var(--off-white)',
+            }}>
+              <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'Inter, sans-serif', fontSize: '0.875rem' }}>
+                {msg.content}
+              </pre>
 
               {/* Transaction approval card */}
               {msg.pendingTxXdr && (
-                <div className="mt-3 p-3 bg-zinc-700 rounded-xl border border-violet-500/50">
-                  <div className="text-xs text-zinc-400 mb-1 font-medium uppercase tracking-wide">
-                    Transaction Ready
+                <div style={{
+                  marginTop: '0.875rem',
+                  padding: '0.875rem',
+                  background: 'rgba(253,218,36,0.06)',
+                  border: '1px solid rgba(253,218,36,0.2)',
+                  borderRadius: '12px',
+                }}>
+                  <div style={{ fontSize: '0.6875rem', fontFamily: 'Anton, Impact, sans-serif', letterSpacing: '0.08em', color: 'var(--warm-grey)', marginBottom: '0.5rem' }}>
+                    TRANSACTION READY
                   </div>
                   {msg.pendingTxSummary && (
-                    <div className="text-xs text-zinc-300 mb-3">{msg.pendingTxSummary}</div>
+                    <div style={{ fontSize: '0.8125rem', color: 'var(--off-white)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
+                      {msg.pendingTxSummary}
+                    </div>
                   )}
                   <button
                     onClick={approveTransaction}
                     disabled={approving}
-                    className="w-full py-2 bg-violet-600 rounded-lg text-sm font-semibold hover:bg-violet-500 disabled:opacity-50 transition flex items-center justify-center gap-2"
+                    className="btn-gold"
+                    style={{ fontSize: '0.875rem', padding: '0.625rem 1.25rem' }}
                   >
                     {approving ? (
-                      <>
-                        <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Submitting…
-                      </>
+                      <span className="spinner" style={{ width: '14px', height: '14px' }} />
                     ) : (
-                      '🔐 Approve & Submit'
+                      <>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" stroke="currentColor" strokeWidth="2"/>
+                          <path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                        </svg>
+                        Approve &amp; Submit
+                      </>
                     )}
                   </button>
                 </div>
@@ -247,15 +263,25 @@ export default function AgentPage() {
           </div>
         ))}
 
-        {/* Thinking indicator */}
+        {/* Thinking dots */}
         {isThinking && (
-          <div className="flex justify-start">
-            <div className="bg-zinc-800 px-4 py-2.5 rounded-2xl rounded-bl-sm">
-              <div className="flex gap-1 items-center h-4">
-                <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce [animation-delay:0ms]" />
-                <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce [animation-delay:150ms]" />
-                <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce [animation-delay:300ms]" />
-              </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+            <div style={{
+              padding: '0.75rem 1rem',
+              borderRadius: '18px 18px 18px 4px',
+              background: 'var(--surface-md)',
+              border: '1px solid var(--border-dim)',
+              display: 'flex', alignItems: 'center', gap: '5px',
+            }}>
+              {[0, 150, 300].map((delay) => (
+                <span key={delay} style={{
+                  width: '6px', height: '6px',
+                  borderRadius: '50%',
+                  background: 'var(--gold)',
+                  display: 'inline-block',
+                  animation: `bounce 1.2s ${delay}ms ease-in-out infinite`,
+                }} />
+              ))}
             </div>
           </div>
         )}
@@ -264,17 +290,35 @@ export default function AgentPage() {
       </div>
 
       {/* Input area */}
-      <div className="px-4 pb-6 pt-3 border-t border-zinc-800">
+      <div style={{
+        borderTop: '1px solid var(--border-dim)',
+        padding: '0.875rem 1.25rem 1.5rem',
+        background: 'rgba(15,15,15,0.9)',
+        backdropFilter: 'blur(12px)',
+        maxWidth: '480px',
+        margin: '0 auto',
+        width: '100%',
+      }}>
         {/* Suggestion chips */}
-        <div className="flex gap-2 overflow-x-auto pb-2 mb-3 scrollbar-none">
+        <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.75rem', scrollbarWidth: 'none' }}>
           {SUGGESTIONS.map((s) => (
             <button
               key={s}
-              onClick={() => {
-                setInput(s)
-                inputRef.current?.focus()
+              onClick={() => { setInput(s); inputRef.current?.focus() }}
+              style={{
+                flexShrink: 0,
+                fontSize: '0.75rem',
+                padding: '0.375rem 0.875rem',
+                background: 'var(--surface)',
+                border: '1px solid var(--border-dim)',
+                borderRadius: '100px',
+                color: 'var(--warm-grey)',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'border-color 120ms, color 120ms',
               }}
-              className="shrink-0 text-xs px-3 py-1.5 bg-zinc-800 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-700 transition"
+              onMouseEnter={e => { (e.target as HTMLElement).style.color = 'var(--off-white)'; (e.target as HTMLElement).style.borderColor = 'rgba(253,218,36,0.3)' }}
+              onMouseLeave={e => { (e.target as HTMLElement).style.color = 'var(--warm-grey)'; (e.target as HTMLElement).style.borderColor = 'var(--border-dim)' }}
             >
               {s}
             </button>
@@ -282,7 +326,7 @@ export default function AgentPage() {
         </div>
 
         {/* Input row */}
-        <div className="flex gap-2 items-end">
+        <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
           <input
             ref={inputRef}
             value={input}
@@ -290,17 +334,28 @@ export default function AgentPage() {
             onKeyDown={handleKeyDown}
             placeholder="Ask me anything…"
             disabled={isThinking}
-            className="flex-1 bg-zinc-800 rounded-xl px-4 py-3 text-sm outline-none focus:ring-1 focus:ring-violet-500 placeholder-zinc-500 disabled:opacity-50"
+            className="input-field"
+            style={{ flex: 1 }}
           />
           <button
             onClick={sendMessage}
             disabled={!input.trim() || isThinking}
-            className="p-3 bg-violet-600 rounded-xl hover:bg-violet-500 disabled:opacity-40 transition shrink-0"
+            className="btn-gold"
+            style={{ width: 'auto', padding: '0.875rem', borderRadius: '12px', flexShrink: 0 }}
           >
-            <Send size={16} />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </button>
         </div>
       </div>
+
+      <style>{`
+        @keyframes bounce {
+          0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+          40% { transform: translateY(-6px); opacity: 1; }
+        }
+      `}</style>
     </div>
   )
 }
