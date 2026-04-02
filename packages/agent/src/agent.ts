@@ -24,8 +24,8 @@ const tools: Anthropic.Tool[] = [
   {
     name: 'get_transfer_history',
     description:
-      'Get recent incoming and/or outgoing Soroban token transfer history for a wallet. ' +
-      'Costs a small USDC fee via x402 micropayment (auto-paid).',
+      'Get recent transfer history for a wallet — includes both classic Stellar payments (XLM sends/receives) ' +
+      'and Soroban token transfers. Returns classicPayments from Horizon and sorobanTransfers from Wraith.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -150,19 +150,37 @@ export async function runAgent(
       }
 
       case 'get_transfer_history': {
-        const directions =
-          input.direction === 'both'
-            ? ['incoming', 'outgoing']
-            : [input.direction as string]
         const limit = (input.limit as number | undefined) ?? 10
-        const results = await Promise.all(
-          directions.map(d =>
-            fetchWithPayment(
-              `${process.env.WRAITH_URL}/transfers/${d}/${input.address}?limit=${limit}`,
-            ),
-          ),
-        )
-        return JSON.stringify(results.length === 1 ? results[0] : results)
+        const horizonUrl = process.env.HORIZON_URL ?? 'https://horizon-testnet.stellar.org'
+
+        // Use fee-payer G... address for Horizon (can't query C... contract on Horizon)
+        const horizonAddr = feePayerAddress ?? (input.address as string)
+
+        // Fetch Soroban token transfers from Wraith + classic payments from Horizon in parallel
+        const [wraithResult, horizonResult] = await Promise.allSettled([
+          (async () => {
+            const directions = input.direction === 'both'
+              ? ['incoming', 'outgoing']
+              : [input.direction as string]
+            const results = await Promise.all(
+              directions.map(d =>
+                fetchWithPayment(
+                  `${process.env.WRAITH_URL}/transfers/${d}/${input.address}?limit=${limit}`,
+                ),
+              ),
+            )
+            return results
+          })(),
+          fetch(`${horizonUrl}/accounts/${horizonAddr}/payments?limit=${limit}&order=desc`)
+            .then(r => r.json()),
+        ])
+
+        const sorobanTransfers = wraithResult.status === 'fulfilled' ? wraithResult.value : []
+        const classicPayments = horizonResult.status === 'fulfilled'
+          ? (horizonResult.value as any)?._embedded?.records ?? []
+          : []
+
+        return JSON.stringify({ sorobanTransfers, classicPayments })
       }
 
       case 'get_wallet_balance': {
