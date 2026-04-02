@@ -347,7 +347,7 @@ export default function DashboardPage() {
         </div>
 
         {/* ── Action Row ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', marginBottom: '2.5rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.75rem', marginBottom: '2.5rem' }}>
           <ActionButton
             label="Send"
             onClick={() => router.push('/send')}
@@ -362,6 +362,11 @@ export default function DashboardPage() {
             label="Swap"
             onClick={() => router.push('/swap')}
             icon={<path d="M7 10l5-5 5 5M17 14l-5 5-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>}
+          />
+          <ActionButton
+            label="Agent"
+            onClick={() => router.push('/agent')}
+            icon={<path d="M12 2a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4zm0 10c-4 0-7 2-7 4v1h14v-1c0-2-3-4-7-4z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>}
           />
         </div>
 
