@@ -230,9 +230,12 @@ export default function AgentPage() {
               lineHeight: 1.6,
               color: 'var(--off-white)',
             }}>
-              <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'Inter, sans-serif', fontSize: '0.875rem' }}>
-                {msg.content}
-              </pre>
+              <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.875rem' }}
+                dangerouslySetInnerHTML={{ __html: msg.content
+                  .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                  .replace(/`(.+?)`/g, '<code style="font-family:Inconsolata,monospace;background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:4px;font-size:0.8125rem">$1</code>')
+                }}
+              />
 
               {/* Transaction approval card */}
               {msg.pendingTxXdr && (
