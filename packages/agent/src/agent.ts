@@ -135,6 +135,7 @@ export async function runAgent(
   walletAddress: string,
   agentKeypair: Keypair,
   conversationHistory: Anthropic.MessageParam[] = [],
+  feePayerAddress?: string,
 ): Promise<AgentResult> {
   const { fetchWithPayment } = createX402Fetch(agentKeypair)
   let pendingTxXdr: string | undefined
@@ -165,7 +166,9 @@ export async function runAgent(
       }
 
       case 'get_wallet_balance': {
-        const balances = await getBalances(input.address as string)
+        // Horizon can't load C... contract addresses — use fee-payer G... address
+        const queryAddress = feePayerAddress ?? (input.address as string)
+        const balances = await getBalances(queryAddress)
         return JSON.stringify(balances)
       }
 

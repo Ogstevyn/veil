@@ -43,6 +43,18 @@ export default function AgentPage() {
       ? (sessionStorage.getItem('invisible_wallet_address') ?? '')
       : ''
 
+  // Derive fee-payer G... address from stored signer secret for balance queries
+  const feePayerAddress = (() => {
+    if (typeof window === 'undefined') return ''
+    try {
+      const secret = sessionStorage.getItem('veil_signer_secret')
+        ?? localStorage.getItem('veil_signer_secret')
+      if (!secret) return ''
+      // Dynamically import would be async — use cached public key instead
+      return localStorage.getItem('veil_signer_public_key') ?? ''
+    } catch { return '' }
+  })()
+
   useEffect(() => {
     const wsUrl = process.env.NEXT_PUBLIC_AGENT_WS_URL ?? 'ws://localhost:3001'
     const ws = new WebSocket(wsUrl)
@@ -93,7 +105,7 @@ export default function AgentPage() {
     setInput('')
 
     wsRef.current.send(
-      JSON.stringify({ type: 'chat', walletAddress, message: text }),
+      JSON.stringify({ type: 'chat', walletAddress, feePayerAddress, message: text }),
     )
   }, [input, isThinking, walletAddress])
 
@@ -340,8 +352,16 @@ export default function AgentPage() {
           <button
             onClick={sendMessage}
             disabled={!input.trim() || isThinking}
-            className="btn-gold"
-            style={{ width: 'auto', padding: '0.875rem', borderRadius: '12px', flexShrink: 0 }}
+            style={{
+              flexShrink: 0,
+              width: '44px', height: '44px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: !input.trim() || isThinking ? 'rgba(253,218,36,0.3)' : 'var(--gold)',
+              color: 'var(--near-black)',
+              border: 'none', borderRadius: '12px',
+              cursor: !input.trim() || isThinking ? 'not-allowed' : 'pointer',
+              transition: 'background 120ms',
+            }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
               <path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>

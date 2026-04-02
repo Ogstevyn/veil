@@ -46,6 +46,7 @@ wss.on('connection', (ws: WebSocket) => {
 
     if (msg.type === 'chat') {
       const walletAddress = msg.walletAddress as string
+      const feePayerAddress = msg.feePayerAddress as string | undefined
       const userMessage = msg.message as string
 
       if (!walletAddress || !userMessage) {
@@ -64,6 +65,7 @@ wss.on('connection', (ws: WebSocket) => {
           walletAddress,
           agentKeypair,
           history,
+          feePayerAddress,
         )
 
         // Update conversation history (keep last 20 turns)
