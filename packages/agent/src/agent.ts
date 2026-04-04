@@ -158,19 +158,9 @@ export async function runAgent(
 
         // Fetch Soroban token transfers from Wraith + classic payments from Horizon in parallel
         const [wraithResult, horizonResult] = await Promise.allSettled([
-          (async () => {
-            const directions = input.direction === 'both'
-              ? ['incoming', 'outgoing']
-              : [input.direction as string]
-            const results = await Promise.all(
-              directions.map(d =>
-                fetchWithPayment(
-                  `${process.env.WRAITH_URL}/transfers/${d}/${input.address}?limit=${limit}`,
-                ),
-              ),
-            )
-            return results
-          })(),
+          fetchWithPayment(
+            `${process.env.WRAITH_URL}/transfers/address/${input.address}?direction=${input.direction}&limit=${limit}`,
+          ),
           fetch(`${horizonUrl}/accounts/${horizonAddr}/payments?limit=${limit}&order=desc`)
             .then(r => r.json()),
         ])
