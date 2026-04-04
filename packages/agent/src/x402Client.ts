@@ -6,9 +6,8 @@ export interface FetchWithPaymentOptions {
 
 /**
  * Creates an x402-aware fetch wrapper for the agent.
- * Attempts plain fetch first. If a 402 is returned AND @x402/stellar
- * is properly configured, handles the payment challenge and retries.
- * Falls back to plain fetch result if x402 setup is unavailable.
+ * Attempts plain fetch first. If a 402 is returned, handles the payment
+ * challenge using x402HTTPClient and retries with the payment header.
  */
 export function createX402Fetch(_agentKeypair: Keypair, _options: FetchWithPaymentOptions = {}) {
   async function fetchWithPayment(url: string, init?: RequestInit): Promise<unknown> {
@@ -23,28 +22,50 @@ export function createX402Fetch(_agentKeypair: Keypair, _options: FetchWithPayme
       return response.json()
     }
 
-    // 402 received — attempt x402 payment if available
+    // 402 received — attempt x402 payment
     try {
+      // @ts-ignore — @x402 packages ship ESM-only types
       const { createEd25519Signer } = await import('@x402/stellar')
+      // @ts-ignore
       const { ExactStellarScheme } = await import('@x402/stellar/exact/client')
-      const { x402Client: CoreX402Client } = await import('@x402/core/client')
+      // @ts-ignore
+      const { x402Client: CoreX402Client, x402HTTPClient } = await import('@x402/core/client')
 
       const network = process.env.STELLAR_NETWORK === 'mainnet'
         ? 'stellar:pubnet'
         : 'stellar:testnet'
 
-      const signer = createEd25519Signer(_agentKeypair.secret(), network as any)
+      const signer = createEd25519Signer(_agentKeypair.secret(), network)
       const scheme = new ExactStellarScheme(signer)
-      const client = new CoreX402Client().register('stellar:*', scheme)
+      const coreClient = new CoreX402Client().register(network, scheme)
+      const httpClient = new x402HTTPClient(coreClient)
 
-      const retryResponse = await client.fetch(url, init)
+      // Parse 402 body (v1 puts requirements in body, v2 in headers)
+      let body: unknown
+      try { body = await response.clone().json() } catch { body = undefined }
+
+      const paymentRequired = httpClient.getPaymentRequiredResponse(
+        (name: string) => response.headers.get(name),
+        body,
+      )
+
+      const paymentPayload = await httpClient.createPaymentPayload(paymentRequired)
+      const paymentHeaders = httpClient.encodePaymentSignatureHeader(paymentPayload)
+
+      const retryResponse = await fetch(url, {
+        ...init,
+        headers: {
+          ...(init?.headers as Record<string, string> ?? {}),
+          ...paymentHeaders,
+        },
+      })
+
       if (!retryResponse.ok) {
         const text = await retryResponse.text()
         throw new Error(`x402 request failed ${retryResponse.status}: ${text}`)
       }
       return retryResponse.json()
     } catch (err) {
-      // x402 payment failed — surface the error
       throw new Error(`Payment required and x402 failed: ${(err as Error).message}`)
     }
   }

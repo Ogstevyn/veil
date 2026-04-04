@@ -191,12 +191,12 @@ export async function runAgent(
       }
 
       case 'build_swap': {
-        const xdr = await buildSwap(input as Parameters<typeof buildSwap>[0])
+        const xdr = await buildSwap(input as unknown as Parameters<typeof buildSwap>[0])
         return JSON.stringify({ transaction_xdr: xdr, status: 'built' })
       }
 
       case 'build_payment': {
-        const xdr = await buildPayment(input as Parameters<typeof buildPayment>[0])
+        const xdr = await buildPayment(input as unknown as Parameters<typeof buildPayment>[0])
         return JSON.stringify({ transaction_xdr: xdr, status: 'built' })
       }
 
