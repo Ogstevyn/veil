@@ -105,10 +105,11 @@ const tools: Anthropic.Tool[] = [
   },
 ]
 
-const SYSTEM_PROMPT = (walletAddress: string) => `\
+const SYSTEM_PROMPT = (walletAddress: string, feePayerAddress: string) => `\
 You are a helpful AI agent embedded in the Veil passkey smart wallet on Stellar.
 
-The user's wallet address is: ${walletAddress}
+The user's wallet contract address is: ${walletAddress}
+The user's fee-payer address (use this as wallet_address in ALL build_swap and build_payment calls): ${feePayerAddress}
 
 You help users:
 - Check their balance and recent transfers
@@ -122,7 +123,8 @@ RULES:
 4. Inform the user when a small x402 micropayment is being auto-paid to fetch data.
 5. Format amounts clearly: "500 XLM", "47.3 USDC".
 6. If you need a recipient address and the user hasn't provided one, ask before building.
-7. Keep responses concise. Use bullet points for multi-step flows.`
+7. Keep responses concise. Use bullet points for multi-step flows.
+8. Always use the fee-payer address (not the contract address) as wallet_address when calling build_swap or build_payment.`
 
 export interface AgentResult {
   response: string
@@ -181,12 +183,20 @@ export async function runAgent(
       }
 
       case 'build_swap': {
-        const xdr = await buildSwap(input as unknown as Parameters<typeof buildSwap>[0])
+        const swapInput = {
+          ...(input as unknown as Parameters<typeof buildSwap>[0]),
+          wallet_address: feePayerAddress ?? (input as any).wallet_address,
+        }
+        const xdr = await buildSwap(swapInput)
         return JSON.stringify({ transaction_xdr: xdr, status: 'built' })
       }
 
       case 'build_payment': {
-        const xdr = await buildPayment(input as unknown as Parameters<typeof buildPayment>[0])
+        const payInput = {
+          ...(input as unknown as Parameters<typeof buildPayment>[0]),
+          wallet_address: feePayerAddress ?? (input as any).wallet_address,
+        }
+        const xdr = await buildPayment(payInput)
         return JSON.stringify({ transaction_xdr: xdr, status: 'built' })
       }
 
@@ -209,7 +219,7 @@ export async function runAgent(
   let response = await client.messages.create({
     model: process.env.CLAUDE_MODEL ?? 'claude-sonnet-4-6',
     max_tokens: 1024,
-    system: SYSTEM_PROMPT(walletAddress),
+    system: SYSTEM_PROMPT(walletAddress, feePayerAddress ?? walletAddress),
     tools,
     messages,
   })
@@ -237,7 +247,7 @@ export async function runAgent(
     response = await client.messages.create({
       model: process.env.CLAUDE_MODEL ?? 'claude-sonnet-4-6',
       max_tokens: 1024,
-      system: SYSTEM_PROMPT(walletAddress),
+      system: SYSTEM_PROMPT(walletAddress, feePayerAddress ?? walletAddress),
       tools,
       messages,
     })

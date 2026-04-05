@@ -144,26 +144,24 @@ export default function AgentPage() {
         return
       }
 
-      const { Keypair, TransactionBuilder, rpc: SorobanRpc } = await import('@stellar/stellar-sdk')
-      const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL ?? 'https://soroban-testnet.stellar.org'
+      const { Keypair, TransactionBuilder, Horizon } = await import('@stellar/stellar-sdk')
+      const horizonUrl = process.env.NEXT_PUBLIC_HORIZON_URL ?? 'https://horizon-testnet.stellar.org'
       const networkPassphrase =
         process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE ?? 'Test SDF Network ; September 2015'
 
-      const feePayerSecret =
-        localStorage.getItem('veil_fee_payer_secret') ?? signerSecret
-      const feePayer = Keypair.fromSecret(feePayerSecret)
-      const server = new SorobanRpc.Server(rpcUrl)
+      const feePayer = Keypair.fromSecret(signerSecret)
+      const horizonServer = new Horizon.Server(horizonUrl)
 
       const tx = TransactionBuilder.fromXDR(pendingTxXdr, networkPassphrase)
       tx.sign(feePayer)
 
-      const result = await server.sendTransaction(tx)
+      const result = await horizonServer.submitTransaction(tx)
 
       setMessages((prev) => [
         ...prev,
         {
           role: 'agent',
-          content: `Transaction submitted.\n\nHash: ${result.hash}\n\nSettles in ~5 seconds.`,
+          content: `Transaction submitted.\n\nHash: \`${result.hash}\`\n\nSettles in ~5 seconds.`,
         },
       ])
       setPendingTxXdr(null)
@@ -227,11 +225,12 @@ export default function AgentPage() {
       </header>
 
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '480px', margin: '0 auto', width: '100%' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         {messages.map((msg, i) => (
           <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
             <div style={{
               maxWidth: '82%',
+              minWidth: 0,
               padding: '0.75rem 1rem',
               borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
               background: msg.role === 'user'
@@ -241,6 +240,8 @@ export default function AgentPage() {
               fontSize: '0.875rem',
               lineHeight: 1.6,
               color: 'var(--off-white)',
+              wordBreak: 'break-word',
+              overflowWrap: 'anywhere',
             }}>
               <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.875rem' }}
                 dangerouslySetInnerHTML={{ __html: msg.content
@@ -322,9 +323,6 @@ export default function AgentPage() {
         padding: '0.875rem 1.25rem 1.5rem',
         background: 'rgba(15,15,15,0.9)',
         backdropFilter: 'blur(12px)',
-        maxWidth: '480px',
-        margin: '0 auto',
-        width: '100%',
       }}>
         {/* Suggestion chips */}
         <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.75rem', scrollbarWidth: 'none' }}>
