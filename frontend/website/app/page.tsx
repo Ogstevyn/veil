@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
+import Link from 'next/link'
 import {
   Shield, Fingerprint, CheckCircle,
   Key, Code2, Zap, ExternalLink,
@@ -46,15 +47,31 @@ function Navbar() {
 
         {/* Desktop nav */}
         <div className="hidden md:flex items-center gap-7">
-          {['How It Works', 'Features', 'Developers', 'Ecosystem'].map((label) => (
-            <a
-              key={label}
-              href={`#${label.toLowerCase().replace(/\s+/g, '-')}`}
-              className="font-inter text-sm text-warm-grey hover:text-off-white transition-colors"
-            >
-              {label}
-            </a>
-          ))}
+          {[
+            { label: 'How It Works', href: '#how-it-works' },
+            { label: 'Features',     href: '#features' },
+            { label: 'Developers',   href: '#developers' },
+            { label: 'Products',     href: '/products' },
+            { label: 'Ecosystem',    href: '#ecosystem' },
+          ].map(({ label, href }) =>
+            href.startsWith('/') ? (
+              <Link
+                key={label}
+                href={href}
+                className="font-inter text-sm text-warm-grey hover:text-off-white transition-colors"
+              >
+                {label}
+              </Link>
+            ) : (
+              <a
+                key={label}
+                href={href}
+                className="font-inter text-sm text-warm-grey hover:text-off-white transition-colors"
+              >
+                {label}
+              </a>
+            )
+          )}
         </div>
 
         {/* Desktop CTAs */}
@@ -85,14 +102,29 @@ function Navbar() {
       {/* Mobile menu */}
       {open && (
         <div className="md:hidden border-t border-white/[0.06] bg-near-black/95 px-6 py-5 flex flex-col gap-4">
-          {['How It Works', 'Features', 'Developers', 'Ecosystem'].map((label) => (
-            <a key={label} href={`#${label.toLowerCase().replace(/\s+/g, '-')}`}
-              className="font-inter text-sm text-warm-grey"
-              onClick={() => setOpen(false)}
-            >
-              {label}
-            </a>
-          ))}
+          {[
+            { label: 'How It Works', href: '#how-it-works' },
+            { label: 'Features',     href: '#features' },
+            { label: 'Developers',   href: '#developers' },
+            { label: 'Products',     href: '/products' },
+            { label: 'Ecosystem',    href: '#ecosystem' },
+          ].map(({ label, href }) =>
+            href.startsWith('/') ? (
+              <Link key={label} href={href}
+                className="font-inter text-sm text-warm-grey"
+                onClick={() => setOpen(false)}
+              >
+                {label}
+              </Link>
+            ) : (
+              <a key={label} href={href}
+                className="font-inter text-sm text-warm-grey"
+                onClick={() => setOpen(false)}
+              >
+                {label}
+              </a>
+            )
+          )}
           <a href="#early-access" className="btn-gold mt-2 justify-center" onClick={() => setOpen(false)}>
             Get Early Access
           </a>
