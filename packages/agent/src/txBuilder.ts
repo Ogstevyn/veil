@@ -48,10 +48,22 @@ export async function buildSwap(input: SwapInput): Promise<string> {
   const sendAmount = input.amount.toFixed(7)
   const destMin = (input.min_received ?? input.amount * 0.995).toFixed(7)
 
-  const tx = new TransactionBuilder(account, {
+  const txBuilder = new TransactionBuilder(account, {
     fee: BASE_FEE,
     networkPassphrase,
   })
+
+  // Auto-add trustline if the fee-payer account doesn't yet hold the destination asset
+  const hasTrustline = destAsset.isNative() ||
+    account.balances.some((b: any) =>
+      b.asset_code === destAsset.getCode() && b.asset_issuer === destAsset.getIssuer(),
+    )
+
+  if (!hasTrustline) {
+    txBuilder.addOperation(Operation.changeTrust({ asset: destAsset }))
+  }
+
+  txBuilder
     .addOperation(Operation.pathPaymentStrictSend({
       sendAsset,
       sendAmount,
@@ -61,9 +73,8 @@ export async function buildSwap(input: SwapInput): Promise<string> {
       path: [],
     }))
     .setTimeout(180)
-    .build()
 
-  return tx.toXDR()
+  return txBuilder.build().toXDR()
 }
 
 /**
