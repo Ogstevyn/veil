@@ -7,6 +7,7 @@ const Server = Horizon.Server
 import { VeilLogo } from '@/components/VeilLogo'
 import { useInactivityLock } from '@/hooks/useInactivityLock'
 import { beginTx, endTx } from '@/lib/txState'
+import { requirePasskey } from '@/lib/passkeyAuth'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const DEBOUNCE_MS = 500
@@ -126,6 +127,9 @@ export default function SwapPage() {
     setStep('swapping')
     setErrorMsg(null)
     try {
+      // Require biometric / passkey approval before signing
+      await requirePasskey()
+
       const signerSecret = sessionStorage.getItem('veil_signer_secret')
         || localStorage.getItem('veil_signer_secret')
       if (!signerSecret) {
@@ -332,9 +336,9 @@ export default function SwapPage() {
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
               <div className="spinner spinner-light" />
             </div>
-            <p style={{ fontWeight: 500 }}>Executing swap...</p>
+            <p style={{ fontWeight: 500 }}>Waiting for passkey…</p>
             <p style={{ fontSize: '0.8125rem', color: 'rgba(246,247,248,0.4)', marginTop: '0.5rem' }}>
-              Broadcasting to Stellar DEX
+              Approve with Face ID / fingerprint to continue
             </p>
           </div>
         )}

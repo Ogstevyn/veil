@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useInactivityLock } from '@/hooks/useInactivityLock'
+import { requirePasskey } from '@/lib/passkeyAuth'
 
 interface Message {
   role: 'user' | 'agent'
@@ -143,6 +144,9 @@ export default function AgentPage() {
     setPendingTxXdr(null)
     setPendingTxSummary(null)
     try {
+      // Require biometric / passkey approval before signing
+      await requirePasskey()
+
       const signerSecret =
         sessionStorage.getItem('veil_signer_secret') ??
         localStorage.getItem('veil_signer_secret')
@@ -283,7 +287,10 @@ export default function AgentPage() {
                     style={{ fontSize: '0.875rem', padding: '0.625rem 1.25rem' }}
                   >
                     {approving ? (
-                      <span className="spinner" style={{ width: '14px', height: '14px' }} />
+                      <>
+                        <span className="spinner" style={{ width: '14px', height: '14px' }} />
+                        Verifying…
+                      </>
                     ) : (
                       <>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
