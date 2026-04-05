@@ -134,7 +134,7 @@ export default function SwapPage() {
         return
       }
       const signerKeypair = Keypair.fromSecret(signerSecret)
-      const account = await server.loadAccount(walletAddress!)
+      const account = await server.loadAccount(signerKeypair.publicKey())
 
       const source = (sourceAsset!.code === 'XLM' || !sourceAsset!.issuer) ? Asset.native() : new Asset(sourceAsset!.code, sourceAsset!.issuer!)
       const dest = (destAsset.code === 'XLM' || !destAsset.issuer) ? Asset.native() : new Asset(destAsset.code, destAsset.issuer!)
