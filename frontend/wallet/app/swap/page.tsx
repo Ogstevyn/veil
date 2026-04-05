@@ -150,7 +150,7 @@ export default function SwapPage() {
           Operation.pathPaymentStrictSend({
             sendAsset: source,
             sendAmount: sourceAmount,
-            destination: walletAddress!,
+            destination: signerKeypair.publicKey(),
             destAsset: dest,
             destMin: destMin,
             path: path,
