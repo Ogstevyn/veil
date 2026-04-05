@@ -130,7 +130,18 @@ export default function AgentPage() {
 
   const approveTransaction = async () => {
     if (!pendingTxXdr) return
+    const xdrToSubmit = pendingTxXdr
     setApproving(true)
+    // Remove the approval card immediately so it can't be double-submitted
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.pendingTxXdr === xdrToSubmit
+          ? { ...m, pendingTxXdr: undefined, pendingTxSummary: undefined }
+          : m,
+      ),
+    )
+    setPendingTxXdr(null)
+    setPendingTxSummary(null)
     try {
       const signerSecret =
         sessionStorage.getItem('veil_signer_secret') ??
@@ -152,7 +163,7 @@ export default function AgentPage() {
       const feePayer = Keypair.fromSecret(signerSecret)
       const horizonServer = new Horizon.Server(horizonUrl)
 
-      const tx = TransactionBuilder.fromXDR(pendingTxXdr, networkPassphrase)
+      const tx = TransactionBuilder.fromXDR(xdrToSubmit, networkPassphrase)
       tx.sign(feePayer)
 
       const result = await horizonServer.submitTransaction(tx)
@@ -164,8 +175,6 @@ export default function AgentPage() {
           content: `Transaction submitted.\n\nHash: \`${result.hash}\`\n\nSettles in ~5 seconds.`,
         },
       ])
-      setPendingTxXdr(null)
-      setPendingTxSummary(null)
     } catch (err) {
       setMessages((prev) => [
         ...prev,
