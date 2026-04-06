@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { Keypair } from '@stellar/stellar-sdk'
 import { useInactivityLock } from '@/hooks/useInactivityLock'
 import { requirePasskey } from '@/lib/passkeyAuth'
 
@@ -44,15 +45,15 @@ export default function AgentPage() {
       ? (sessionStorage.getItem('invisible_wallet_address') ?? '')
       : ''
 
-  // Derive fee-payer G... address from stored signer secret for balance queries
+  // Always derive fee-payer public key from the secret — never from the cached
+  // veil_signer_public_key, which can be stale and cause address/signer mismatch (400).
   const feePayerAddress = (() => {
     if (typeof window === 'undefined') return ''
     try {
       const secret = sessionStorage.getItem('veil_signer_secret')
         ?? localStorage.getItem('veil_signer_secret')
       if (!secret) return ''
-      // Dynamically import would be async — use cached public key instead
-      return localStorage.getItem('veil_signer_public_key') ?? ''
+      return Keypair.fromSecret(secret).publicKey()
     } catch { return '' }
   })()
 
