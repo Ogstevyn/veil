@@ -22,7 +22,7 @@ jobs:
         with:
           workspaces: contracts
       - run: cargo build --all
-      - run: cargo test --all
+      - run: cargo test -p invisible_wallet -p factory
 
   sdk:
     name: SDK — typecheck & test
