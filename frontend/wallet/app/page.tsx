@@ -7,6 +7,7 @@ import { VeilLogo } from '@/components/VeilLogo'
 import { OnboardingTutorial } from '@/components/OnboardingTutorial'
 import { useInvisibleWallet } from '@veil/sdk'
 import { deriveFeePayerKeypair } from '@/lib/deriveFeePayer'
+import { trackWalletCreated } from '@/lib/supabase'
 
 const CONFIG = {
   rpcUrl: 'https://soroban-testnet.stellar.org',
@@ -79,6 +80,9 @@ export default function OnboardingPage() {
       setAddress(deployed.walletAddress)
       setStep('done')
       success = true
+
+      // Track wallet creation (fire-and-forget — never blocks the flow)
+      trackWalletCreated(deployed.walletAddress, signerKeypair.publicKey())
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       setError(msg)

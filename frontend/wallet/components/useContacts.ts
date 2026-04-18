@@ -37,7 +37,7 @@ export function useContacts() {
 
   const addContact = (name: string, address: string) => {
     if (!name.trim()) throw new Error('Name is required')
-    if (!StrKey.isValidEd25519PublicKey(address)) {
+    if (!StrKey.isValidEd25519PublicKey(address) && !StrKey.isValidContract(address)) {
       throw new Error('Invalid Stellar address')
     }
 

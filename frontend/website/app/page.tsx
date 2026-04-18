@@ -8,6 +8,7 @@ import {
   Key, Code2, Zap, ExternalLink,
 } from 'lucide-react'
 import CodeBlock from '@/components/ui/code-block'
+import { supabase } from '@/lib/supabase'
 
 /* ── Animation primitives ─────────────────────────────────────────────── */
 const fadeUp = {
@@ -523,10 +524,31 @@ function BuiltOnStellar() {
 function EarlyAccess() {
   const [email, setEmail] = useState('')
   const [submitted, setSubmitted] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (email.trim()) setSubmitted(true)
+    if (!email.trim()) return
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      const { error } = await supabase.from('waitlist').insert({ email: email.trim().toLowerCase() })
+      if (error) {
+        if (error.code === '23505') {
+          // Unique constraint — already signed up
+          setSubmitted(true)
+        } else {
+          throw error
+        }
+      } else {
+        setSubmitted(true)
+      }
+    } catch {
+      setSubmitError('Something went wrong — try again.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -578,9 +600,12 @@ function EarlyAccess() {
                 placeholder="your@email.com"
                 className="flex-1 px-5 py-3 rounded-pill bg-near-black/10 border border-near-black/20 font-inter text-near-black placeholder:text-near-black/40 text-sm outline-none focus:border-near-black/50 transition-colors"
               />
-              <button type="submit" className="btn-navy whitespace-nowrap">
-                Join Waitlist
+              <button type="submit" className="btn-navy whitespace-nowrap" disabled={submitting}>
+                {submitting ? 'Joining...' : 'Join Waitlist'}
               </button>
+              {submitError && (
+                <p className="text-xs text-red-400 text-center mt-1">{submitError}</p>
+              )}
             </motion.form>
           ) : (
             <motion.div
