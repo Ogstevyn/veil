@@ -66,17 +66,15 @@ const config: DocsThemeConfig = {
   },
 
   banner: {
-    key: 'phase-3-v3',
+    key: 'agent-sdk-v1',
     content: (
       <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '0.82rem' }}>
-        Phase 3 (Factory Contract) is open for contributors —{' '}
+        New: AI Agent SDK is live — integrate Claude-powered wallet actions into your app.{' '}
         <a
-          href="https://github.com/Miracle656/veil/issues"
-          target="_blank"
-          rel="noopener noreferrer"
+          href="/agent-integration"
           style={{ textDecoration: 'underline', color: '#FDDA24' }}
         >
-          see open issues
+          Read the docs
         </a>
       </span>
     ),

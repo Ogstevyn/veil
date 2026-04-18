@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import Anthropic from '@anthropic-ai/sdk';
 import express from 'express';
 import cors from 'cors';
 import { WebSocketServer } from 'ws';
@@ -12,6 +13,8 @@ if (!process.env.AGENT_KEYPAIR_SECRET) {
 }
 const agentKeypair = Keypair.fromSecret(process.env.AGENT_KEYPAIR_SECRET);
 console.log(`[agent] Agent keypair: ${agentKeypair.publicKey()}`);
+// ── Shared Anthropic client ──────────────────────────────────────────────────
+const anthropicClient = new Anthropic();
 // ── Per-wallet conversation history ──────────────────────────────────────────
 const conversations = new Map();
 // ── HTTP server ───────────────────────────────────────────────────────────────
@@ -39,6 +42,7 @@ wss.on('connection', (ws) => {
             const walletAddress = msg.walletAddress;
             const feePayerAddress = msg.feePayerAddress;
             const userMessage = msg.message;
+            const profile = msg.profile;
             if (!walletAddress || !userMessage) {
                 ws.send(JSON.stringify({ type: 'error', message: 'walletAddress and message required' }));
                 return;
@@ -47,7 +51,7 @@ wss.on('connection', (ws) => {
             ws.send(JSON.stringify({ type: 'thinking' }));
             try {
                 const history = conversations.get(walletAddress) ?? [];
-                const { response, pendingTxXdr, pendingTxSummary } = await runAgent(userMessage, walletAddress, agentKeypair, history, feePayerAddress);
+                const { response, pendingTxXdr, pendingTxSummary } = await runAgent(userMessage, walletAddress, agentKeypair, history, feePayerAddress, profile, anthropicClient);
                 // Update conversation history (keep last 20 turns)
                 history.push({ role: 'user', content: userMessage });
                 history.push({ role: 'assistant', content: response });
