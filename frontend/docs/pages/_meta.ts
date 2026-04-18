@@ -4,5 +4,6 @@ export default {
   architecture: 'Architecture',
   'contract-api': 'Contract API',
   'sdk-reference': 'SDK Reference',
+  'agent-integration': 'Agent Integration',
   security: 'Security',
 }

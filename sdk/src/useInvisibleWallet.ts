@@ -672,13 +672,19 @@ export function useInvisibleWallet(config: WalletConfig): InvisibleWallet {
             const result = (sim as SorobanRpc.Api.SimulateTransactionSuccessResponse).result;
             if (!result) throw new Error('Simulation returned no result');
 
-            const signersMap = scValToNative(result.retval) as Map<number, Uint8Array>;
+            const signersData = scValToNative(result.retval);
             const infos: SignerInfo[] = [];
-            
-            for (const [index, key] of signersMap.entries()) {
+
+            // scValToNative may return a Map or a plain object depending on SDK version
+            const entries: Iterable<[unknown, unknown]> =
+                signersData instanceof Map
+                    ? signersData.entries()
+                    : Object.entries(signersData as Record<string, unknown>);
+
+            for (const [index, key] of entries) {
                 infos.push({
-                    index,
-                    publicKey: bufferToHex(key)
+                    index: typeof index === 'string' ? parseInt(index, 10) : (index as number),
+                    publicKey: bufferToHex(key as Uint8Array),
                 });
             }
 

@@ -1,0 +1,255 @@
+---
+title: Agent Integration
+description: Integrate the Veil AI agent into your application — self-hosted or SDK-based.
+---
+
+import { Callout } from 'nextra/components'
+
+# Agent Integration
+
+Veil includes an AI agent powered by Claude that can check balances, fetch live prices, build swaps/payments, and request user approval — all through natural language. The agent uses **x402 micropayments** for paid data feeds (Oracle, Wraith).
+
+---
+
+## Architecture
+
+```
+Your App (React)           Agent Backend (Node.js)         Stellar
+──────────────────         ─────────────────────────       ────────────
+WebSocket client           Express + WebSocket server       Horizon API
+ │                          │                               Soroban RPC
+ │  { type: 'chat',        │                               │
+ │    walletAddress,        │  Claude API (tool use)        │
+ │    feePayerAddress,      │   ├─ get_price → Oracle ──── x402
+ │    message,              │   ├─ get_transfer_history     │
+ │    profile }             │   ├─ get_wallet_balance       │
+ │ ─────────────────────▶   │   ├─ build_swap ──────────── Horizon
+ │                          │   ├─ build_payment            │
+ │  { type: 'response',    │   └─ request_user_approval    │
+ │    message,              │                               │
+ │    pendingTxXdr? }       │                               │
+ │ ◀─────────────────────   │                               │
+ │                          │                               │
+ │  User approves with      │                               │
+ │  passkey (biometric)     │                               │
+ │  Signs + submits tx ─────┼───────────────────────────▶  Horizon
+```
+
+---
+
+## Self-Hosting the Agent Backend
+
+The agent backend is a standalone Node.js server at `packages/agent/`.
+
+### 1. Install dependencies
+
+```bash
+cd packages/agent
+npm install
+```
+
+### 2. Configure environment
+
+```bash
+# .env
+ANTHROPIC_API_KEY=sk-ant-...       # Your Claude API key
+AGENT_KEYPAIR_SECRET=S...          # Stellar keypair for x402 micropayments
+ORACLE_URL=https://your-oracle.com # Price feed API (x402-enabled)
+WRAITH_URL=https://your-wraith.com # Transfer indexer API (x402-enabled)
+HORIZON_URL=https://horizon-testnet.stellar.org
+SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
+STELLAR_NETWORK=testnet            # or "mainnet"
+CLAUDE_MODEL=claude-sonnet-4-6   # optional, defaults to claude-sonnet-4-6
+AGENT_PORT=3001                    # optional
+ALLOWED_ORIGIN=*                   # CORS origin
+```
+
+### 3. Run
+
+```bash
+npm run dev    # Development with hot-reload
+npm run build  # Compile TypeScript
+npm start      # Production
+```
+
+The server exposes:
+- `GET /health` — returns `{ ok: true, agentAddress: "G..." }`
+- `WebSocket /` — chat endpoint
+
+---
+
+## WebSocket Protocol
+
+### Client → Server
+
+**Chat message:**
+```json
+{
+  "type": "chat",
+  "walletAddress": "C...",
+  "feePayerAddress": "G...",
+  "message": "Swap 100 XLM to USDC",
+  "profile": {
+    "name": "Alice",
+    "language": "English",
+    "role": "trader",
+    "persona": "concise and direct"
+  }
+}
+```
+
+**Clear history:**
+```json
+{
+  "type": "clear_history",
+  "walletAddress": "C..."
+}
+```
+
+### Server → Client
+
+**Thinking indicator:**
+```json
+{ "type": "thinking" }
+```
+
+**Response (text only):**
+```json
+{
+  "type": "response",
+  "message": "Your balance is 1,500 XLM."
+}
+```
+
+**Response with pending transaction:**
+```json
+{
+  "type": "response",
+  "message": "I've built a swap of 100 XLM → USDC. Please review and approve.",
+  "pendingTxXdr": "AAAAAB...",
+  "pendingTxSummary": "Swap 100 XLM for ~12.5 USDC via SDEX"
+}
+```
+
+**Error:**
+```json
+{
+  "type": "error",
+  "message": "walletAddress and message required"
+}
+```
+
+---
+
+## User Profile & Personalization
+
+The agent adapts its behavior based on the `profile` object sent with each message.
+
+### Roles
+
+| Role | Agent behavior |
+|---|---|
+| `trader` | Suggests trades on incoming funds, mentions spread/slippage, action-oriented |
+| `investor` | Suggests yield/diversification, emphasizes market context, analytical |
+| `saver` | Focuses on balance updates and payments, avoids jargon, reassuring |
+| `explorer` | Explains concepts, encourages learning, suggests simple actions |
+
+### Language
+
+Set `profile.language` to any supported language (e.g. `"Spanish"`, `"Yoruba"`, `"Japanese"`). The agent will respond in that language.
+
+### Persona
+
+| Value | Tone |
+|---|---|
+| `""` (empty) | Friendly and professional (default) |
+| `"concise and direct"` | Short answers, no fluff |
+| `"friendly and casual"` | Relaxed, conversational |
+| `"detailed and educational"` | Explains concepts along the way |
+| `"witty and fun"` | Light-hearted with personality |
+
+---
+
+## Agent Tools
+
+The agent has access to these tools via Claude's tool-use API:
+
+| Tool | Description | Cost |
+|---|---|---|
+| `get_price` | Live SDEX + AMM prices and swap routes | x402 micropayment |
+| `get_transfer_history` | Recent Soroban + classic transfers | x402 micropayment |
+| `get_wallet_balance` | XLM + token balances (fee-payer + contract) | Free |
+| `build_swap` | Build a path payment (unsigned XDR) | Free |
+| `build_payment` | Build a payment transaction (unsigned XDR) | Free |
+| `request_user_approval` | Send transaction to frontend for passkey approval | Free |
+
+<Callout type="warning">
+The agent **never** executes transactions directly. It always calls `request_user_approval` which sends the unsigned XDR to the frontend. The user must approve with their biometric (passkey) before the transaction is signed and submitted.
+</Callout>
+
+---
+
+## Proactive Notifications
+
+The Veil wallet frontend detects new incoming transfers and generates role-aware agent notifications:
+
+- **Trader**: "You received 500 XLM — want to check rates and trade?"
+- **Investor**: "500 XLM landed — explore yield opportunities?"
+- **Saver**: "You received 500 XLM — want to see your balance?"
+- **Explorer**: "You got 500 XLM — want me to explain what you can do?"
+
+These are stored in `localStorage` as `veil_agent_notification` and displayed as the first agent message when the user opens the chat. A notification badge appears on the Agent button in the dashboard.
+
+---
+
+## Connecting from Your Own Frontend
+
+If you're building a custom frontend, connect to the agent WebSocket:
+
+```typescript
+const ws = new WebSocket('wss://your-agent-backend.com')
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    type: 'chat',
+    walletAddress: 'C...',
+    feePayerAddress: 'G...',
+    message: "What's my balance?",
+    profile: { name: 'Alice', role: 'trader', language: 'English' },
+  }))
+}
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data)
+
+  if (data.type === 'thinking') {
+    // Show loading indicator
+  }
+
+  if (data.type === 'response') {
+    console.log('Agent:', data.message)
+
+    if (data.pendingTxXdr) {
+      // Transaction needs user approval
+      // Sign with passkey and submit to Horizon
+    }
+  }
+}
+```
+
+---
+
+## Environment Variables Reference
+
+| Variable | Required | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Yes | Claude API key |
+| `AGENT_KEYPAIR_SECRET` | Yes | Stellar secret for x402 payments |
+| `ORACLE_URL` | Yes | Price oracle endpoint |
+| `WRAITH_URL` | Yes | Transfer indexer endpoint |
+| `HORIZON_URL` | No | Horizon endpoint (default: testnet) |
+| `SOROBAN_RPC_URL` | No | Soroban RPC (default: testnet) |
+| `STELLAR_NETWORK` | No | `"testnet"` or `"mainnet"` |
+| `CLAUDE_MODEL` | No | Model ID (default: `claude-sonnet-4-6`) |
+| `AGENT_PORT` | No | HTTP/WS port (default: 3001) |
+| `ALLOWED_ORIGIN` | No | CORS origin (default: `*`) |
