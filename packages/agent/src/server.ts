@@ -1,11 +1,11 @@
 import 'dotenv/config'
+import Anthropic from '@anthropic-ai/sdk'
 import express from 'express'
 import cors from 'cors'
 import { WebSocketServer, WebSocket } from 'ws'
 import { createServer } from 'http'
 import { Keypair } from '@stellar/stellar-sdk'
 import { runAgent, type UserProfile } from './agent.js'
-import type Anthropic from '@anthropic-ai/sdk'
 
 // ── Agent keypair (Ed25519 — for x402 payments only, never signs wallet txs) ──
 if (!process.env.AGENT_KEYPAIR_SECRET) {
@@ -14,6 +14,9 @@ if (!process.env.AGENT_KEYPAIR_SECRET) {
 }
 const agentKeypair = Keypair.fromSecret(process.env.AGENT_KEYPAIR_SECRET)
 console.log(`[agent] Agent keypair: ${agentKeypair.publicKey()}`)
+
+// ── Shared Anthropic client ──────────────────────────────────────────────────
+const anthropicClient = new Anthropic()
 
 // ── Per-wallet conversation history ──────────────────────────────────────────
 const conversations = new Map<string, Anthropic.MessageParam[]>()
@@ -68,6 +71,7 @@ wss.on('connection', (ws: WebSocket) => {
           history,
           feePayerAddress,
           profile,
+          anthropicClient,
         )
 
         // Update conversation history (keep last 20 turns)

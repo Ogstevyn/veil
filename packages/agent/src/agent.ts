@@ -3,7 +3,58 @@ import { Keypair } from '@stellar/stellar-sdk'
 import { createX402Fetch } from './x402Client.js'
 import { buildSwap, buildPayment, getBalances } from './txBuilder.js'
 
-const client = new Anthropic()
+// ── Agent configuration ──────────────────────────────────────────────────────
+
+export interface AgentConfig {
+  /** Anthropic API key. Falls back to ANTHROPIC_API_KEY env var. */
+  anthropicApiKey?: string
+  /** Stellar secret key for x402 micropayments. */
+  agentKeypairSecret: string
+  /** Price oracle URL (x402-enabled). */
+  oracleUrl: string
+  /** Transfer indexer URL (x402-enabled). */
+  wraithUrl: string
+  /** Horizon URL. Default: testnet. */
+  horizonUrl?: string
+  /** Soroban RPC URL. Default: testnet. */
+  sorobanRpcUrl?: string
+  /** Stellar network: "testnet" or "mainnet". Default: "testnet". */
+  network?: string
+  /** Claude model ID. Default: "claude-sonnet-4-6". */
+  model?: string
+  /** Max conversation history turns to keep per wallet. Default: 20. */
+  maxHistoryTurns?: number
+}
+
+// ── Resolved config (with defaults filled in) ────────────────────────────────
+
+interface ResolvedConfig {
+  anthropicApiKey?: string
+  agentKeypair: Keypair
+  oracleUrl: string
+  wraithUrl: string
+  horizonUrl: string
+  sorobanRpcUrl: string
+  network: string
+  model: string
+  maxHistoryTurns: number
+}
+
+function resolveConfig(config: AgentConfig): ResolvedConfig {
+  return {
+    anthropicApiKey: config.anthropicApiKey,
+    agentKeypair: Keypair.fromSecret(config.agentKeypairSecret),
+    oracleUrl: config.oracleUrl,
+    wraithUrl: config.wraithUrl,
+    horizonUrl: config.horizonUrl ?? 'https://horizon-testnet.stellar.org',
+    sorobanRpcUrl: config.sorobanRpcUrl ?? 'https://soroban-testnet.stellar.org',
+    network: config.network ?? 'testnet',
+    model: config.model ?? 'claude-sonnet-4-6',
+    maxHistoryTurns: config.maxHistoryTurns ?? 20,
+  }
+}
+
+// ── Tools ────────────────────────────────────────────────────────────────────
 
 const tools: Anthropic.Tool[] = [
   {
@@ -105,6 +156,8 @@ const tools: Anthropic.Tool[] = [
   },
 ]
 
+// ── User profile & system prompt ─────────────────────────────────────────────
+
 export interface UserProfile {
   name?: string
   language?: string
@@ -173,43 +226,55 @@ RULES:
 8. Always use the fee-payer address (not the contract address) as wallet_address when calling build_swap or build_payment.`
 }
 
+// ── Core agent loop ──────────────────────────────────────────────────────────
+
 export interface AgentResult {
   response: string
   pendingTxXdr?: string
   pendingTxSummary?: string
 }
 
+/**
+ * Run a single agent turn. Used internally by both the server and createVeilAgent.
+ */
 export async function runAgent(
   userMessage: string,
   walletAddress: string,
   agentKeypair: Keypair,
-  conversationHistory: Anthropic.MessageParam[] = [],
-  feePayerAddress?: string,
-  profile?: UserProfile,
+  conversationHistory: Anthropic.MessageParam[],
+  feePayerAddress: string | undefined,
+  profile: UserProfile | undefined,
+  /** Pass an Anthropic client instance for reuse. */
+  client: Anthropic,
+  /** Service URLs — if not provided, falls back to process.env. */
+  urls?: { oracleUrl?: string; wraithUrl?: string; horizonUrl?: string },
+  /** Model override. */
+  model?: string,
 ): Promise<AgentResult> {
   const { fetchWithPayment } = createX402Fetch(agentKeypair)
   let pendingTxXdr: string | undefined
   let pendingTxSummary: string | undefined
 
+  const oracleUrl = urls?.oracleUrl ?? process.env.ORACLE_URL ?? ''
+  const wraithUrl = urls?.wraithUrl ?? process.env.WRAITH_URL ?? ''
+  const horizonUrl = urls?.horizonUrl ?? process.env.HORIZON_URL ?? 'https://horizon-testnet.stellar.org'
+  const claudeModel = model ?? process.env.CLAUDE_MODEL ?? 'claude-sonnet-4-6'
+
   async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
     switch (name) {
       case 'get_price': {
-        const url = `${process.env.ORACLE_URL}/price/${input.asset_a}/${input.asset_b}`
+        const url = `${oracleUrl}/price/${input.asset_a}/${input.asset_b}`
         const data = await fetchWithPayment(url)
         return JSON.stringify(data)
       }
 
       case 'get_transfer_history': {
         const limit = (input.limit as number | undefined) ?? 10
-        const horizonUrl = process.env.HORIZON_URL ?? 'https://horizon-testnet.stellar.org'
-
-        // Use fee-payer G... address for Horizon (can't query C... contract on Horizon)
         const horizonAddr = feePayerAddress ?? (input.address as string)
 
-        // Fetch Soroban token transfers from Wraith + classic payments from Horizon in parallel
         const [wraithResult, horizonResult] = await Promise.allSettled([
           fetchWithPayment(
-            `${process.env.WRAITH_URL}/transfers/address/${input.address}?direction=${input.direction}&limit=${limit}`,
+            `${wraithUrl}/transfers/address/${input.address}?direction=${input.direction}&limit=${limit}`,
           ),
           fetch(`${horizonUrl}/accounts/${horizonAddr}/payments?limit=${limit}&order=desc`)
             .then(r => r.json()),
@@ -224,7 +289,6 @@ export async function runAgent(
       }
 
       case 'get_wallet_balance': {
-        // Fee-payer G... for Horizon; walletAddress C... for Soroban RPC contract XLM
         const fpAddress = feePayerAddress ?? (input.address as string)
         const contractAddr = walletAddress?.startsWith('C') ? walletAddress : undefined
         const balances = await getBalances(fpAddress, contractAddr)
@@ -266,7 +330,7 @@ export async function runAgent(
   ]
 
   let response = await client.messages.create({
-    model: process.env.CLAUDE_MODEL ?? 'claude-sonnet-4-6',
+    model: claudeModel,
     max_tokens: 1024,
     system: SYSTEM_PROMPT(walletAddress, feePayerAddress ?? walletAddress, profile),
     tools,
@@ -294,7 +358,7 @@ export async function runAgent(
     messages.push({ role: 'user', content: toolResults })
 
     response = await client.messages.create({
-      model: process.env.CLAUDE_MODEL ?? 'claude-sonnet-4-6',
+      model: claudeModel,
       max_tokens: 1024,
       system: SYSTEM_PROMPT(walletAddress, feePayerAddress ?? walletAddress, profile),
       tools,
@@ -308,4 +372,93 @@ export async function runAgent(
     .join('')
 
   return { response: text, pendingTxXdr, pendingTxSummary }
+}
+
+// ── createVeilAgent — library-friendly wrapper ───────────────────────────────
+
+export interface ChatOptions {
+  walletAddress: string
+  feePayerAddress?: string
+  profile?: UserProfile
+}
+
+export interface VeilAgent {
+  /** Send a message and get a response. Manages conversation history per wallet. */
+  chat: (message: string, options: ChatOptions) => Promise<AgentResult>
+  /** Clear conversation history for a wallet. */
+  clearHistory: (walletAddress: string) => void
+  /** The agent's Stellar public key (used for x402 payments). */
+  publicKey: string
+}
+
+/**
+ * Create a reusable Veil agent instance.
+ *
+ * @example
+ * ```typescript
+ * import { createVeilAgent } from '@veil/agent'
+ *
+ * const agent = createVeilAgent({
+ *   anthropicApiKey: 'sk-ant-...',
+ *   agentKeypairSecret: 'S...',
+ *   oracleUrl: 'https://oracle.example.com',
+ *   wraithUrl: 'https://wraith.example.com',
+ * })
+ *
+ * const result = await agent.chat('What is my balance?', {
+ *   walletAddress: 'C...',
+ *   feePayerAddress: 'G...',
+ *   profile: { name: 'Alice', role: 'trader' },
+ * })
+ *
+ * console.log(result.response)
+ * if (result.pendingTxXdr) {
+ *   // Present to user for passkey approval, then sign + submit
+ * }
+ * ```
+ */
+export function createVeilAgent(config: AgentConfig): VeilAgent {
+  const resolved = resolveConfig(config)
+
+  const client = new Anthropic({
+    apiKey: resolved.anthropicApiKey,
+  })
+
+  const conversations = new Map<string, Anthropic.MessageParam[]>()
+
+  return {
+    publicKey: resolved.agentKeypair.publicKey(),
+
+    async chat(message: string, options: ChatOptions): Promise<AgentResult> {
+      const { walletAddress, feePayerAddress, profile } = options
+      const history = conversations.get(walletAddress) ?? []
+
+      const result = await runAgent(
+        message,
+        walletAddress,
+        resolved.agentKeypair,
+        history,
+        feePayerAddress,
+        profile,
+        client,
+        {
+          oracleUrl: resolved.oracleUrl,
+          wraithUrl: resolved.wraithUrl,
+          horizonUrl: resolved.horizonUrl,
+        },
+        resolved.model,
+      )
+
+      // Update conversation history
+      history.push({ role: 'user', content: message })
+      history.push({ role: 'assistant', content: result.response })
+      conversations.set(walletAddress, history.slice(-resolved.maxHistoryTurns))
+
+      return result
+    },
+
+    clearHistory(walletAddress: string) {
+      conversations.delete(walletAddress)
+    },
+  }
 }

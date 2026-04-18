@@ -1,14 +1,34 @@
 {
   "name": "@veil/agent",
-  "version": "0.1.0",
-  "description": "Veil AI agent backend — Claude tools + x402 Stellar payments",
+  "version": "0.2.0",
+  "description": "Veil AI agent — Claude-powered wallet assistant with x402 Stellar payments",
   "type": "module",
-  "main": "dist/server.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./server": {
+      "import": "./dist/server.js",
+      "types": "./dist/server.d.ts"
+    }
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js"
   },
+  "keywords": [
+    "stellar",
+    "soroban",
+    "ai-agent",
+    "claude",
+    "x402",
+    "veil"
+  ],
+  "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.81.0",
     "@stellar/stellar-sdk": "^14.6.1",

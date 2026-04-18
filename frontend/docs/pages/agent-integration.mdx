@@ -9,6 +9,87 @@ import { Callout } from 'nextra/components'
 
 Veil includes an AI agent powered by Claude that can check balances, fetch live prices, build swaps/payments, and request user approval — all through natural language. The agent uses **x402 micropayments** for paid data feeds (Oracle, Wraith).
 
+There are two ways to integrate:
+1. **SDK** (`createVeilAgent`) — import and use directly in your Node.js backend
+2. **WebSocket server** — self-host the agent backend, connect from any frontend
+
+---
+
+## SDK Usage (Recommended)
+
+Install the agent package:
+
+```bash
+npm install @veil/agent
+```
+
+Create an agent and start chatting:
+
+```typescript
+import { createVeilAgent } from '@veil/agent'
+
+const agent = createVeilAgent({
+  anthropicApiKey: 'sk-ant-...',       // Your Claude API key
+  agentKeypairSecret: 'S...',          // Stellar keypair for x402 payments
+  oracleUrl: 'https://oracle.example.com',
+  wraithUrl: 'https://wraith.example.com',
+  // Optional:
+  horizonUrl: 'https://horizon-testnet.stellar.org',
+  network: 'testnet',
+  model: 'claude-sonnet-4-6',
+  maxHistoryTurns: 20,
+})
+
+// Send a message
+const result = await agent.chat('What is my balance?', {
+  walletAddress: 'CABC...',
+  feePayerAddress: 'GABC...',
+  profile: {
+    name: 'Alice',
+    role: 'trader',      // trader | investor | saver | explorer
+    language: 'English',
+    persona: 'concise and direct',
+  },
+})
+
+console.log(result.response)
+// "Your balance is 1,500 XLM and 47.3 USDC."
+
+// If the agent built a transaction, it returns the unsigned XDR
+if (result.pendingTxXdr) {
+  console.log('Transaction needs approval:', result.pendingTxSummary)
+  // → Sign with passkey and submit to Horizon
+}
+
+// Clear history for a wallet
+agent.clearHistory('CABC...')
+
+// The agent's Stellar public key (for x402 funding)
+console.log('Fund this address for x402:', agent.publicKey)
+```
+
+### `AgentConfig`
+
+| Field | Required | Description |
+|---|---|---|
+| `anthropicApiKey` | No | Claude API key. Falls back to `ANTHROPIC_API_KEY` env var |
+| `agentKeypairSecret` | Yes | Stellar secret key for x402 micropayments |
+| `oracleUrl` | Yes | Price oracle endpoint (x402-enabled) |
+| `wraithUrl` | Yes | Transfer indexer endpoint (x402-enabled) |
+| `horizonUrl` | No | Default: `https://horizon-testnet.stellar.org` |
+| `sorobanRpcUrl` | No | Default: `https://soroban-testnet.stellar.org` |
+| `network` | No | `"testnet"` or `"mainnet"`. Default: `"testnet"` |
+| `model` | No | Claude model ID. Default: `"claude-sonnet-4-6"` |
+| `maxHistoryTurns` | No | Conversation turns to keep per wallet. Default: `20` |
+
+### `AgentResult`
+
+| Field | Type | Description |
+|---|---|---|
+| `response` | `string` | The agent's text response |
+| `pendingTxXdr` | `string?` | Unsigned transaction XDR if the agent built a tx |
+| `pendingTxSummary` | `string?` | Human-readable summary of the pending tx |
+
 ---
 
 ## Architecture
