@@ -30,8 +30,8 @@ export default function SettingsPage() {
   const wallet = useInvisibleWallet(CONFIG)
 
   useEffect(() => {
-    const addr = sessionStorage.getItem('veil_address')
-    if (!addr) { router.replace('/'); return }
+    const addr = sessionStorage.getItem('invisible_wallet_address')
+    if (!addr) { router.replace('/lock'); return }
     setAddress(addr)
   }, [router])
 

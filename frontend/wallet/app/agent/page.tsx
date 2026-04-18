@@ -14,11 +14,37 @@ interface Message {
 }
 
 // ── User roles ───────────────────────────────────────────────────────────────
+const ROLE_ICONS: Record<string, JSX.Element> = {
+  trader: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <path d="M7 10l5-5 5 5M17 14l-5 5-5-5" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+  investor: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <polyline points="16 7 22 7 22 13" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+  saver: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0H5m14 0h2m-16 0H3" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M9 7h6M9 11h6M9 15h4" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round"/>
+    </svg>
+  ),
+  explorer: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <circle cx="11" cy="11" r="8" stroke="var(--gold)" strokeWidth="2"/>
+      <path d="M21 21l-4.35-4.35" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round"/>
+    </svg>
+  ),
+}
+
 const ROLES = [
-  { value: 'trader',   label: 'Trader',   icon: '⇄', desc: 'I actively swap and trade assets' },
-  { value: 'investor', label: 'Investor', icon: '📈', desc: 'I hold long-term and look for yield' },
-  { value: 'saver',    label: 'Saver',    icon: '🏦', desc: 'I save and send money to people' },
-  { value: 'explorer', label: 'Explorer', icon: '🔍', desc: "I'm new and want to learn" },
+  { value: 'trader',   label: 'Trader',   desc: 'I actively swap and trade assets' },
+  { value: 'investor', label: 'Investor', desc: 'I hold long-term and look for yield' },
+  { value: 'saver',    label: 'Saver',    desc: 'I save and send money to people' },
+  { value: 'explorer', label: 'Explorer', desc: "I'm new and want to learn" },
 ]
 
 const LANGUAGES = [
@@ -419,7 +445,7 @@ export default function AgentPage() {
                       transition: 'all 120ms',
                     }}
                   >
-                    <span style={{ fontSize: '1.5rem', flexShrink: 0 }}>{r.icon}</span>
+                    <span style={{ flexShrink: 0, display: 'flex' }}>{ROLE_ICONS[r.value]}</span>
                     <div>
                       <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: draft.role === r.value ? 'var(--gold)' : 'var(--off-white)' }}>
                         {r.label}

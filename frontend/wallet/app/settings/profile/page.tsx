@@ -17,11 +17,37 @@ const PERSONAS = [
   { value: 'witty and fun', label: 'Fun', desc: 'Light-hearted with personality' },
 ]
 
+const ROLE_ICONS: Record<string, JSX.Element> = {
+  trader: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+      <path d="M7 10l5-5 5 5M17 14l-5 5-5-5" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+  investor: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <polyline points="16 7 22 7 22 13" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+  saver: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+      <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0H5m14 0h2m-16 0H3" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M9 7h6M9 11h6M9 15h4" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round"/>
+    </svg>
+  ),
+  explorer: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+      <circle cx="11" cy="11" r="8" stroke="var(--gold)" strokeWidth="2"/>
+      <path d="M21 21l-4.35-4.35" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round"/>
+    </svg>
+  ),
+}
+
 const ROLES = [
-  { value: 'trader',   icon: '⇄',  label: 'Trader',   desc: 'I actively swap and trade assets' },
-  { value: 'investor', icon: '📈', label: 'Investor', desc: 'I hold long-term and look for yield' },
-  { value: 'saver',    icon: '🏦', label: 'Saver',    desc: 'I save and send money to people' },
-  { value: 'explorer', icon: '🔍', label: 'Explorer', desc: "I'm new and want to learn" },
+  { value: 'trader',   label: 'Trader',   desc: 'I actively swap and trade assets' },
+  { value: 'investor', label: 'Investor', desc: 'I hold long-term and look for yield' },
+  { value: 'saver',    label: 'Saver',    desc: 'I save and send money to people' },
+  { value: 'explorer', label: 'Explorer', desc: "I'm new and want to learn" },
 ]
 
 function loadProfile(): { name: string; language: string; persona: string; role: string } {
@@ -116,7 +142,7 @@ export default function ProfileSettingsPage() {
                   background: profile.role === r.value ? 'rgba(253,218,36,0.06)' : 'transparent',
                 }}
               >
-                <span style={{ fontSize: '1.25rem', flexShrink: 0 }}>{r.icon}</span>
+                <span style={{ flexShrink: 0, display: 'flex' }}>{ROLE_ICONS[r.value]}</span>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '0.875rem', fontWeight: 600, color: profile.role === r.value ? 'var(--gold)' : 'var(--off-white)' }}>
                     {r.label}
