@@ -10,6 +10,7 @@ import {
 const Server = Horizon.Server
 import { TxDetailSheet, type TxRecord } from '@/components/TxDetailSheet'
 import { useInactivityLock } from '@/hooks/useInactivityLock'
+import { deriveStoredFeePayer } from '@/lib/deriveFeePayer'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -259,13 +260,15 @@ export default function DashboardPage() {
         ? Keypair.fromSecret(signerSecret).publicKey()
         : (localStorage.getItem('veil_signer_public_key') || null)
 
-      // After cross-device recovery there is no fee-payer yet — auto-create one.
+      // After cache clear or cross-device recovery — derive fee-payer from passkey.
+      // Same credential ID always produces the same keypair, so funds are never lost.
       if (!signerPublicKey) {
-        const newKp = Keypair.random()
-        localStorage.setItem('veil_signer_public_key', newKp.publicKey())
-        localStorage.setItem('veil_signer_secret', newKp.secret())
-        sessionStorage.setItem('veil_signer_secret', newKp.secret())
-        signerPublicKey = newKp.publicKey()
+        const derived = await deriveStoredFeePayer()
+        if (!derived) throw new Error('No passkey found. Please register again.')
+        localStorage.setItem('veil_signer_public_key', derived.publicKey())
+        localStorage.setItem('veil_signer_secret', derived.secret())
+        sessionStorage.setItem('veil_signer_secret', derived.secret())
+        signerPublicKey = derived.publicKey()
       }
       // Always ensure the secret is persisted to localStorage so it survives lock/unlock
       const currentSecret = sessionStorage.getItem('veil_signer_secret')

@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { LockKeyhole, Fingerprint, AlertCircle } from 'lucide-react'
 import { useInvisibleWallet } from '@veil/sdk'
+import { deriveStoredFeePayer } from '@/lib/deriveFeePayer'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const FACTORY_ADDRESS    = process.env.NEXT_PUBLIC_FACTORY_CONTRACT_ID ?? ''
@@ -68,8 +69,16 @@ export default function LockPage() {
         return
       }
       sessionStorage.setItem('invisible_wallet_address', result.walletAddress)
-      // Restore fee-payer secret so send/swap work after unlock
-      const storedSecret = localStorage.getItem('veil_signer_secret')
+      // Restore fee-payer secret — derive from passkey if localStorage was cleared
+      let storedSecret = localStorage.getItem('veil_signer_secret')
+      if (!storedSecret) {
+        const derived = await deriveStoredFeePayer()
+        if (derived) {
+          storedSecret = derived.secret()
+          localStorage.setItem('veil_signer_secret', storedSecret)
+          localStorage.setItem('veil_signer_public_key', derived.publicKey())
+        }
+      }
       if (storedSecret) sessionStorage.setItem('veil_signer_secret', storedSecret)
 
       router.replace('/dashboard')

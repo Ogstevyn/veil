@@ -6,6 +6,7 @@ import { Keypair } from '@stellar/stellar-sdk'
 import { VeilLogo } from '@/components/VeilLogo'
 import { OnboardingTutorial } from '@/components/OnboardingTutorial'
 import { useInvisibleWallet } from '@veil/sdk'
+import { deriveFeePayerKeypair } from '@/lib/deriveFeePayer'
 
 const CONFIG = {
   rpcUrl: 'https://soroban-testnet.stellar.org',
@@ -51,7 +52,11 @@ export default function OnboardingPage() {
       if (!result) throw new Error('Registration returned no result')
 
       setStep('deploying')
-      const signerKeypair = Keypair.random()
+      // Derive fee-payer deterministically from the passkey credential ID.
+      // On cache clear the same passkey → same credential ID → same keypair.
+      const credentialId = localStorage.getItem('invisible_wallet_key_id')
+      if (!credentialId) throw new Error('Passkey credential not found after registration')
+      const signerKeypair = await deriveFeePayerKeypair(credentialId)
       const signerSecret  = signerKeypair.secret()
 
       // Fund the fee-payer keypair via Friendbot before deploying on testnet

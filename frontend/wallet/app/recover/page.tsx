@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { VeilLogo } from '@/components/VeilLogo'
 import { derToRawSignature, bufferToHex } from '@veil/utils'
+import { deriveFeePayerKeypair } from '@/lib/deriveFeePayer'
 import {
   rpc as SorobanRpc, Contract, TransactionBuilder, BASE_FEE,
   Account, Keypair, Networks, scValToNative,
@@ -138,10 +139,15 @@ export default function RecoverPage() {
       localStorage.setItem('invisible_wallet_address',    walletAddress)
       localStorage.setItem('invisible_wallet_key_id',     assertion.id)
       localStorage.setItem('invisible_wallet_public_key', matchedHex)
-      // veil_signer_public_key is the fee-payer G... address and is device-specific.
-      // Don't overwrite or clear it — if it exists on this device it should stay;
-      // if not, the dashboard will auto-create a new fee-payer when the user taps Faucet.
       sessionStorage.setItem('invisible_wallet_address', walletAddress)
+
+      // Derive fee-payer from the passkey credential ID — recovers the same
+      // keypair that was created during initial registration, so any funds
+      // on the fee-payer G... account are immediately accessible again.
+      const derived = await deriveFeePayerKeypair(assertion.id)
+      localStorage.setItem('veil_signer_secret', derived.secret())
+      localStorage.setItem('veil_signer_public_key', derived.publicKey())
+      sessionStorage.setItem('veil_signer_secret', derived.secret())
 
       setStep('done')
       setTimeout(() => router.push('/dashboard'), 800)
