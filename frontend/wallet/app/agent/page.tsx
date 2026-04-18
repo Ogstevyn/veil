@@ -20,17 +20,25 @@ const SUGGESTIONS = [
   'Best XLM/USDC rate?',
 ]
 
+function getUserProfile(): { name?: string; language?: string; persona?: string } {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem('veil_user_profile')
+    return raw ? JSON.parse(raw) : {}
+  } catch { return {} }
+}
+
 export default function AgentPage() {
   const router = useRouter()
   useInactivityLock()
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'agent',
-      content:
-        "Hey! I'm your Veil agent. I can check prices, view transfer history, and execute swaps — all with your approval. What would you like to do?",
-    },
-  ])
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const profile = getUserProfile()
+    const greeting = profile.name
+      ? `Hey ${profile.name}! I'm your Veil agent. I can check prices, view transfer history, and execute swaps — all with your approval. What would you like to do?`
+      : "Hey! I'm your Veil agent. I can check prices, view transfer history, and execute swaps — all with your approval. What would you like to do?"
+    return [{ role: 'agent', content: greeting }]
+  })
   const [input, setInput] = useState('')
   const [isThinking, setIsThinking] = useState(false)
   const [pendingTxXdr, setPendingTxXdr] = useState<string | null>(null)
@@ -132,7 +140,7 @@ export default function AgentPage() {
     }
 
     wsRef.current.send(
-      JSON.stringify({ type: 'chat', walletAddress, feePayerAddress, message: text }),
+      JSON.stringify({ type: 'chat', walletAddress, feePayerAddress, message: text, profile: getUserProfile() }),
     )
   }, [input, isThinking, walletAddress, feePayerAddress])
 
@@ -193,10 +201,20 @@ export default function AgentPage() {
           content: `Transaction submitted.\n\nHash: \`${result.hash}\`\n\nSettles in ~5 seconds.`,
         },
       ])
-    } catch (err) {
+    } catch (err: any) {
+      // Extract detailed Horizon error codes when available
+      let detail = err?.message ?? 'Unknown error'
+      try {
+        const extras = err?.response?.data?.extras
+        if (extras?.result_codes) {
+          const codes = extras.result_codes
+          const opCodes = codes.operations?.join(', ') ?? ''
+          detail = `${codes.transaction ?? 'tx_failed'}${opCodes ? ` — ${opCodes}` : ''}`
+        }
+      } catch { /* use generic message */ }
       setMessages((prev) => [
         ...prev,
-        { role: 'agent', content: `Transaction failed: ${(err as Error).message}` },
+        { role: 'agent', content: `Transaction failed: ${detail}` },
       ])
     } finally {
       setApproving(false)

@@ -4,7 +4,7 @@ import cors from 'cors'
 import { WebSocketServer, WebSocket } from 'ws'
 import { createServer } from 'http'
 import { Keypair } from '@stellar/stellar-sdk'
-import { runAgent } from './agent.js'
+import { runAgent, type UserProfile } from './agent.js'
 import type Anthropic from '@anthropic-ai/sdk'
 
 // ── Agent keypair (Ed25519 — for x402 payments only, never signs wallet txs) ──
@@ -48,6 +48,7 @@ wss.on('connection', (ws: WebSocket) => {
       const walletAddress = msg.walletAddress as string
       const feePayerAddress = msg.feePayerAddress as string | undefined
       const userMessage = msg.message as string
+      const profile = msg.profile as UserProfile | undefined
 
       if (!walletAddress || !userMessage) {
         ws.send(JSON.stringify({ type: 'error', message: 'walletAddress and message required' }))
@@ -66,6 +67,7 @@ wss.on('connection', (ws: WebSocket) => {
           agentKeypair,
           history,
           feePayerAddress,
+          profile,
         )
 
         // Update conversation history (keep last 20 turns)

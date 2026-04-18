@@ -105,11 +105,29 @@ const tools: Anthropic.Tool[] = [
   },
 ]
 
-const SYSTEM_PROMPT = (walletAddress: string, feePayerAddress: string) => `\
+export interface UserProfile {
+  name?: string
+  language?: string
+  persona?: string
+}
+
+const SYSTEM_PROMPT = (walletAddress: string, feePayerAddress: string, profile?: UserProfile) => {
+  const nameClause = profile?.name ? `The user's name is ${profile.name}. Address them by name occasionally.` : ''
+  const langClause = profile?.language && profile.language !== 'English'
+    ? `IMPORTANT: The user prefers ${profile.language}. Respond in ${profile.language} unless they write in a different language.`
+    : ''
+  const personaClause = profile?.persona
+    ? `Personality note: The user wants you to be ${profile.persona}. Adjust your tone accordingly.`
+    : ''
+
+  return `\
 You are a helpful AI agent embedded in the Veil passkey smart wallet on Stellar.
 
 The user's wallet contract address is: ${walletAddress}
 The user's fee-payer address (use this as wallet_address in ALL build_swap and build_payment calls): ${feePayerAddress}
+${nameClause}
+${langClause}
+${personaClause}
 
 You help users:
 - Check their balance and recent transfers
@@ -125,6 +143,7 @@ RULES:
 6. If you need a recipient address and the user hasn't provided one, ask before building.
 7. Keep responses concise. Use bullet points for multi-step flows.
 8. Always use the fee-payer address (not the contract address) as wallet_address when calling build_swap or build_payment.`
+}
 
 export interface AgentResult {
   response: string
@@ -138,6 +157,7 @@ export async function runAgent(
   agentKeypair: Keypair,
   conversationHistory: Anthropic.MessageParam[] = [],
   feePayerAddress?: string,
+  profile?: UserProfile,
 ): Promise<AgentResult> {
   const { fetchWithPayment } = createX402Fetch(agentKeypair)
   let pendingTxXdr: string | undefined
@@ -220,7 +240,7 @@ export async function runAgent(
   let response = await client.messages.create({
     model: process.env.CLAUDE_MODEL ?? 'claude-sonnet-4-6',
     max_tokens: 1024,
-    system: SYSTEM_PROMPT(walletAddress, feePayerAddress ?? walletAddress),
+    system: SYSTEM_PROMPT(walletAddress, feePayerAddress ?? walletAddress, profile),
     tools,
     messages,
   })
@@ -248,7 +268,7 @@ export async function runAgent(
     response = await client.messages.create({
       model: process.env.CLAUDE_MODEL ?? 'claude-sonnet-4-6',
       max_tokens: 1024,
-      system: SYSTEM_PROMPT(walletAddress, feePayerAddress ?? walletAddress),
+      system: SYSTEM_PROMPT(walletAddress, feePayerAddress ?? walletAddress, profile),
       tools,
       messages,
     })
