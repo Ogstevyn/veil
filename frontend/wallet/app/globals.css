@@ -291,3 +291,9 @@ body {
   background: rgba(253,218,36,0.15);
   animation: pulse-ring 2s ease-out infinite;
 }
+
+/* ── Agent notification badge pulse ─────────────────────────────────── */
+@keyframes badgePulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}

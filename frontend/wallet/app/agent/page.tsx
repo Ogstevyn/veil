@@ -13,14 +13,42 @@ interface Message {
   pendingTxSummary?: string
 }
 
-const SUGGESTIONS = [
+// ── User roles ───────────────────────────────────────────────────────────────
+const ROLES = [
+  { value: 'trader',   label: 'Trader',   icon: '⇄', desc: 'I actively swap and trade assets' },
+  { value: 'investor', label: 'Investor', icon: '📈', desc: 'I hold long-term and look for yield' },
+  { value: 'saver',    label: 'Saver',    icon: '🏦', desc: 'I save and send money to people' },
+  { value: 'explorer', label: 'Explorer', icon: '🔍', desc: "I'm new and want to learn" },
+]
+
+const LANGUAGES = [
+  'English', 'Spanish', 'French', 'Portuguese', 'Chinese', 'Japanese',
+  'Korean', 'Arabic', 'Hindi', 'Russian', 'German', 'Turkish', 'Yoruba', 'Igbo', 'Swahili',
+]
+
+// ── Role-aware suggestions ───────────────────────────────────────────────────
+const ROLE_SUGGESTIONS: Record<string, string[]> = {
+  trader: ["What's my balance?", 'Best XLM/USDC rate?', 'Swap 100 XLM to USDC', 'Show recent trades'],
+  investor: ["What's my balance?", 'Best XLM/USDC rate?', 'Show my portfolio', 'Any yield opportunities?'],
+  saver: ["What's my balance?", 'Send 50 XLM', 'Show recent transfers', 'Who sent me XLM?'],
+  explorer: ["What's my balance?", 'How do swaps work?', 'What can you do?', 'Show recent transfers'],
+}
+
+const DEFAULT_SUGGESTIONS = [
   "What's my balance?",
   'Swap 100 XLM to USDC',
   'Show recent transfers',
   'Best XLM/USDC rate?',
 ]
 
-function getUserProfile(): { name?: string; language?: string; persona?: string } {
+export interface UserProfile {
+  name?: string
+  language?: string
+  persona?: string
+  role?: string
+}
+
+function getUserProfile(): UserProfile {
   if (typeof window === 'undefined') return {}
   try {
     const raw = localStorage.getItem('veil_user_profile')
@@ -28,16 +56,84 @@ function getUserProfile(): { name?: string; language?: string; persona?: string 
   } catch { return {} }
 }
 
+function saveUserProfile(profile: UserProfile) {
+  localStorage.setItem('veil_user_profile', JSON.stringify(profile))
+}
+
+function buildGreeting(profile: UserProfile, notification?: string | null): string {
+  const name = profile.name ? `, ${profile.name}` : ''
+
+  // If there's a pending notification (incoming funds), show that first
+  if (notification) return notification
+
+  switch (profile.role) {
+    case 'trader':
+      return `Hey${name}! Ready to trade? I can check live prices, find the best swap routes, and execute trades — all with your biometric approval.`
+    case 'investor':
+      return `Hey${name}! I can help you check your portfolio, find the best rates, and manage your positions. What would you like to review?`
+    case 'saver':
+      return `Hey${name}! Need to send or check on funds? I can show your balance, recent transfers, and help you send payments securely.`
+    case 'explorer':
+      return `Hey${name}! Welcome to Veil. I can help you check balances, explore prices, make swaps, and send payments. Ask me anything!`
+    default:
+      return `Hey${name}! I'm your Veil agent. I can check prices, view transfer history, and execute swaps — all with your approval. What would you like to do?`
+  }
+}
+
+// ── Notification helpers ─────────────────────────────────────────────────────
+function getPendingNotification(profile: UserProfile): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem('veil_agent_notification')
+    if (!raw) return null
+    const notif = JSON.parse(raw)
+    // Clear after reading
+    localStorage.removeItem('veil_agent_notification')
+
+    const name = profile.name ? `, ${profile.name}` : ''
+    const amount = notif.amount ?? '?'
+    const asset = notif.asset ?? 'XLM'
+    const from = notif.from
+      ? `${notif.from.slice(0, 6)}…${notif.from.slice(-6)}`
+      : 'someone'
+
+    switch (profile.role) {
+      case 'trader':
+        return `Hey${name}! You just received **${amount} ${asset}** from ${from}. Want to check the current rates and make a trade?`
+      case 'investor':
+        return `Hey${name}! **${amount} ${asset}** just landed in your wallet from ${from}. Would you like to explore yield opportunities or check market prices?`
+      case 'saver':
+        return `Hey${name}! You received **${amount} ${asset}** from ${from}. Your updated balance is ready — want to see it?`
+      case 'explorer':
+        return `Hey${name}! Good news — you just received **${amount} ${asset}** from ${from}. Want me to explain what you can do with it?`
+      default:
+        return `Hey${name}! You received **${amount} ${asset}** from ${from}. What would you like to do?`
+    }
+  } catch { return null }
+}
+
 export default function AgentPage() {
   const router = useRouter()
   useInactivityLock()
 
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [onboardingStep, setOnboardingStep] = useState(0) // 0=name, 1=role, 2=language
+  const [draft, setDraft] = useState<UserProfile>({ name: '', role: '', language: 'English' })
+
+  // Check if onboarding needed
+  useEffect(() => {
+    const profile = getUserProfile()
+    if (!profile.role) {
+      setShowOnboarding(true)
+      setDraft({ name: profile.name ?? '', role: '', language: profile.language ?? 'English' })
+    }
+  }, [])
+
   const [messages, setMessages] = useState<Message[]>(() => {
     const profile = getUserProfile()
-    const greeting = profile.name
-      ? `Hey ${profile.name}! I'm your Veil agent. I can check prices, view transfer history, and execute swaps — all with your approval. What would you like to do?`
-      : "Hey! I'm your Veil agent. I can check prices, view transfer history, and execute swaps — all with your approval. What would you like to do?"
-    return [{ role: 'agent', content: greeting }]
+    if (!profile.role) return [] // will be set after onboarding
+    const notification = getPendingNotification(profile)
+    return [{ role: 'agent', content: buildGreeting(profile, notification) }]
   })
   const [input, setInput] = useState('')
   const [isThinking, setIsThinking] = useState(false)
@@ -224,9 +320,188 @@ export default function AgentPage() {
   const clearHistory = () => {
     if (!walletAddress || !wsRef.current) return
     wsRef.current.send(JSON.stringify({ type: 'clear_history', walletAddress }))
-    setMessages([{ role: 'agent', content: 'History cleared. How can I help you?' }])
+    const profile = getUserProfile()
+    setMessages([{ role: 'agent', content: buildGreeting(profile) }])
   }
 
+  // Finish onboarding → save profile, show greeting, enter chat
+  const finishOnboarding = () => {
+    const existing = getUserProfile()
+    const merged: UserProfile = { ...existing, ...draft }
+    saveUserProfile(merged)
+    setShowOnboarding(false)
+    const notification = getPendingNotification(merged)
+    setMessages([{ role: 'agent', content: buildGreeting(merged, notification) }])
+    // Mark notification as seen
+    localStorage.setItem('veil_agent_last_visit', Date.now().toString())
+  }
+
+  const suggestions = ROLE_SUGGESTIONS[getUserProfile().role ?? ''] ?? DEFAULT_SUGGESTIONS
+
+  // ── Onboarding screen ────────────────────────────────────────────────────
+  if (showOnboarding) {
+    return (
+      <div className="wallet-shell">
+        <header className="wallet-nav">
+          <button
+            onClick={() => router.back()}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem', color: 'var(--warm-grey)', display: 'flex' }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+          <span style={{ fontWeight: 600, fontSize: '0.9375rem' }}>Set Up Your Agent</span>
+          <div style={{ width: '28px' }} />
+        </header>
+
+        <main className="wallet-main" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingTop: '2rem' }}>
+
+          {/* Progress dots */}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            {[0, 1, 2].map(i => (
+              <div key={i} style={{
+                width: '8px', height: '8px', borderRadius: '50%',
+                background: i <= onboardingStep ? 'var(--gold)' : 'var(--border-dim)',
+                transition: 'background 200ms',
+              }} />
+            ))}
+          </div>
+
+          {/* Step 0: Name */}
+          {onboardingStep === 0 && (
+            <>
+              <h2 style={{ fontFamily: 'Lora, Georgia, serif', fontWeight: 600, fontStyle: 'italic', fontSize: '1.75rem', textAlign: 'center' }}>
+                What should I call you?
+              </h2>
+              <p style={{ fontSize: '0.875rem', color: 'rgba(246,247,248,0.5)', textAlign: 'center', lineHeight: 1.6 }}>
+                Your agent will greet you by name and personalize conversations.
+              </p>
+              <input
+                className="input-field"
+                type="text"
+                placeholder="Your name"
+                value={draft.name ?? ''}
+                onChange={e => setDraft(d => ({ ...d, name: e.target.value }))}
+                autoFocus
+                autoComplete="off"
+                style={{ fontSize: '1rem', textAlign: 'center' }}
+              />
+              <button
+                className="btn-gold"
+                onClick={() => setOnboardingStep(1)}
+              >
+                {draft.name?.trim() ? 'Continue' : 'Skip'}
+              </button>
+            </>
+          )}
+
+          {/* Step 1: Role */}
+          {onboardingStep === 1 && (
+            <>
+              <h2 style={{ fontFamily: 'Lora, Georgia, serif', fontWeight: 600, fontStyle: 'italic', fontSize: '1.75rem', textAlign: 'center' }}>
+                How do you use your wallet?
+              </h2>
+              <p style={{ fontSize: '0.875rem', color: 'rgba(246,247,248,0.5)', textAlign: 'center', lineHeight: 1.6 }}>
+                This helps your agent give smarter suggestions when you receive funds or ask for help.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {ROLES.map(r => (
+                  <button
+                    key={r.value}
+                    onClick={() => setDraft(d => ({ ...d, role: r.value }))}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '1rem',
+                      padding: '1rem 1.25rem', borderRadius: '0.75rem',
+                      cursor: 'pointer', textAlign: 'left',
+                      border: draft.role === r.value ? '1.5px solid var(--gold)' : '1px solid var(--border-dim)',
+                      background: draft.role === r.value ? 'rgba(253,218,36,0.06)' : 'transparent',
+                      transition: 'all 120ms',
+                    }}
+                  >
+                    <span style={{ fontSize: '1.5rem', flexShrink: 0 }}>{r.icon}</span>
+                    <div>
+                      <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: draft.role === r.value ? 'var(--gold)' : 'var(--off-white)' }}>
+                        {r.label}
+                      </div>
+                      <div style={{ fontSize: '0.8125rem', color: 'var(--warm-grey)', marginTop: '0.125rem' }}>
+                        {r.desc}
+                      </div>
+                    </div>
+                    {draft.role === r.value && (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                        <path d="M20 6L9 17l-5-5" stroke="var(--gold)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button className="btn-ghost" onClick={() => setOnboardingStep(0)} style={{ flex: 1 }}>
+                  Back
+                </button>
+                <button
+                  className="btn-gold"
+                  onClick={() => setOnboardingStep(2)}
+                  disabled={!draft.role}
+                  style={{ flex: 2 }}
+                >
+                  Continue
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* Step 2: Language */}
+          {onboardingStep === 2 && (
+            <>
+              <h2 style={{ fontFamily: 'Lora, Georgia, serif', fontWeight: 600, fontStyle: 'italic', fontSize: '1.75rem', textAlign: 'center' }}>
+                Preferred language
+              </h2>
+              <p style={{ fontSize: '0.875rem', color: 'rgba(246,247,248,0.5)', textAlign: 'center', lineHeight: 1.6 }}>
+                Your agent will respond in this language.
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'center' }}>
+                {LANGUAGES.map(lang => (
+                  <button
+                    key={lang}
+                    onClick={() => setDraft(d => ({ ...d, language: lang }))}
+                    style={{
+                      padding: '0.5rem 0.875rem',
+                      borderRadius: '2rem',
+                      fontSize: '0.8125rem',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      border: draft.language === lang ? '1.5px solid var(--gold)' : '1px solid var(--border-dim)',
+                      background: draft.language === lang ? 'rgba(253,218,36,0.1)' : 'var(--surface-md)',
+                      color: draft.language === lang ? 'var(--gold)' : 'var(--off-white)',
+                      transition: 'all 120ms',
+                    }}
+                  >
+                    {lang}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button className="btn-ghost" onClick={() => setOnboardingStep(1)} style={{ flex: 1 }}>
+                  Back
+                </button>
+                <button
+                  className="btn-gold"
+                  onClick={finishOnboarding}
+                  style={{ flex: 2 }}
+                >
+                  Start chatting
+                </button>
+              </div>
+            </>
+          )}
+        </main>
+      </div>
+    )
+  }
+
+  // ── Chat UI ──────────────────────────────────────────────────────────────
   return (
     <div className="wallet-shell">
       {/* Header */}
@@ -372,9 +647,9 @@ export default function AgentPage() {
         background: 'rgba(15,15,15,0.9)',
         backdropFilter: 'blur(12px)',
       }}>
-        {/* Suggestion chips */}
+        {/* Suggestion chips — role-aware */}
         <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.75rem', scrollbarWidth: 'none' }}>
-          {SUGGESTIONS.map((s) => (
+          {suggestions.map((s) => (
             <button
               key={s}
               onClick={() => { setInput(s); inputRef.current?.focus() }}

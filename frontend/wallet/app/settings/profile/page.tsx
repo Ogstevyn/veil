@@ -17,8 +17,15 @@ const PERSONAS = [
   { value: 'witty and fun', label: 'Fun', desc: 'Light-hearted with personality' },
 ]
 
-function loadProfile(): { name: string; language: string; persona: string } {
-  if (typeof window === 'undefined') return { name: '', language: 'English', persona: '' }
+const ROLES = [
+  { value: 'trader',   icon: '⇄',  label: 'Trader',   desc: 'I actively swap and trade assets' },
+  { value: 'investor', icon: '📈', label: 'Investor', desc: 'I hold long-term and look for yield' },
+  { value: 'saver',    icon: '🏦', label: 'Saver',    desc: 'I save and send money to people' },
+  { value: 'explorer', icon: '🔍', label: 'Explorer', desc: "I'm new and want to learn" },
+]
+
+function loadProfile(): { name: string; language: string; persona: string; role: string } {
+  if (typeof window === 'undefined') return { name: '', language: 'English', persona: '', role: '' }
   try {
     const raw = localStorage.getItem('veil_user_profile')
     const parsed = raw ? JSON.parse(raw) : {}
@@ -26,8 +33,9 @@ function loadProfile(): { name: string; language: string; persona: string } {
       name: parsed.name ?? '',
       language: parsed.language ?? 'English',
       persona: parsed.persona ?? '',
+      role: parsed.role ?? '',
     }
-  } catch { return { name: '', language: 'English', persona: '' } }
+  } catch { return { name: '', language: 'English', persona: '', role: '' } }
 }
 
 export default function ProfileSettingsPage() {
@@ -45,7 +53,7 @@ export default function ProfileSettingsPage() {
 
   const reset = () => {
     localStorage.removeItem('veil_user_profile')
-    setProfile({ name: '', language: 'English', persona: '' })
+    setProfile({ name: '', language: 'English', persona: '', role: '' })
   }
 
   return (
@@ -84,6 +92,49 @@ export default function ProfileSettingsPage() {
           />
           <p style={{ fontSize: '0.75rem', color: 'rgba(214,210,196,0.5)', marginTop: '0.375rem' }}>
             The agent will greet you by name
+          </p>
+        </div>
+
+        {/* Role */}
+        <div className="card">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="var(--teal)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <span style={{ fontSize: '0.75rem', fontFamily: 'Anton, Impact, sans-serif', letterSpacing: '0.08em', color: 'var(--warm-grey)' }}>WALLET ROLE</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {ROLES.map(r => (
+              <button
+                key={r.value}
+                onClick={() => setProfile(prev => ({ ...prev, role: r.value }))}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '0.75rem',
+                  padding: '0.75rem 1rem', borderRadius: '0.75rem',
+                  cursor: 'pointer', textAlign: 'left',
+                  border: profile.role === r.value ? '1.5px solid var(--gold)' : '1px solid var(--border-dim)',
+                  background: profile.role === r.value ? 'rgba(253,218,36,0.06)' : 'transparent',
+                }}
+              >
+                <span style={{ fontSize: '1.25rem', flexShrink: 0 }}>{r.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: profile.role === r.value ? 'var(--gold)' : 'var(--off-white)' }}>
+                    {r.label}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--warm-grey)', marginTop: '0.125rem' }}>
+                    {r.desc}
+                  </div>
+                </div>
+                {profile.role === r.value && (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                    <path d="M20 6L9 17l-5-5" stroke="var(--gold)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                )}
+              </button>
+            ))}
+          </div>
+          <p style={{ fontSize: '0.75rem', color: 'rgba(214,210,196,0.5)', marginTop: '0.625rem' }}>
+            Affects what your agent suggests when you receive funds
           </p>
         </div>
 

@@ -35,6 +35,7 @@ export default function DashboardPage() {
   const [fundingError, setFundingError]   = useState<string | null>(null)
   const [copied, setCopied]               = useState(false)
   const [hasFeePayerKey, setHasFeePayerKey] = useState(true)
+  const [agentBadge, setAgentBadge]         = useState(false)
 
   const isTestnet = process.env.NEXT_PUBLIC_NETWORK === 'testnet'
 
@@ -226,7 +227,26 @@ export default function DashboardPage() {
       } catch { /* Wraith offline — fall back to Horizon only */ }
     }
 
-    // ── 4. Combine and display ───────────────────────────────────────────────
+    // ── 4. Check for new incoming transfers → agent notification badge ─────
+    const lastVisit = parseInt(localStorage.getItem('veil_agent_last_visit') ?? '0', 10)
+    const newIncoming = txRecords.filter(
+      tx => tx.type === 'received' && tx.timestamp * 1000 > lastVisit,
+    )
+    if (newIncoming.length > 0) {
+      const latest = newIncoming[0]
+      localStorage.setItem('veil_agent_notification', JSON.stringify({
+        amount: parseFloat(latest.amount).toFixed(2),
+        asset: latest.asset,
+        from: latest.counterparty,
+        timestamp: latest.timestamp,
+      }))
+      setAgentBadge(true)
+    } else {
+      // Check if a stale notification exists
+      setAgentBadge(!!localStorage.getItem('veil_agent_notification'))
+    }
+
+    // ── 5. Combine and display ───────────────────────────────────────────────
     const totalXlm = (contractXlm + feePayerXlm).toFixed(7)
     setAssets([
       { code: 'XLM', issuer: null, balance: totalXlm },
@@ -326,6 +346,16 @@ export default function DashboardPage() {
             </svg>
           </button>
         )}
+        <button
+          onClick={() => router.push('/settings')}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem', color: 'var(--warm-grey)', display: 'flex' }}
+          title="Settings"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.75"/>
+            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
       </header>
 
       <main className="wallet-main" style={{ paddingTop: '3rem', paddingBottom: '3rem' }}>
@@ -432,7 +462,12 @@ export default function DashboardPage() {
           />
           <ActionButton
             label="Agent"
-            onClick={() => router.push('/agent')}
+            onClick={() => {
+              localStorage.setItem('veil_agent_last_visit', Date.now().toString())
+              setAgentBadge(false)
+              router.push('/agent')
+            }}
+            badge={agentBadge}
             icon={<path d="M12 2a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4zm0 10c-4 0-7 2-7 4v1h14v-1c0-2-3-4-7-4z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>}
           />
         </div>
@@ -648,7 +683,7 @@ function TokenIcon({ code, size = 32 }: { code: string; size?: number }) {
   )
 }
 
-function ActionButton({ label, onClick, icon }: { label: string; onClick: () => void; icon: React.ReactNode }) {
+function ActionButton({ label, onClick, icon, badge }: { label: string; onClick: () => void; icon: React.ReactNode; badge?: boolean }) {
   return (
     <button
       onClick={onClick}
@@ -662,8 +697,18 @@ function ActionButton({ label, onClick, icon }: { label: string; onClick: () => 
         cursor: 'pointer',
         background: 'var(--surface)',
         transition: 'all 0.2s ease',
+        position: 'relative',
       }}
     >
+      {badge && (
+        <span style={{
+          position: 'absolute', top: '8px', right: '8px',
+          width: '10px', height: '10px', borderRadius: '50%',
+          background: 'var(--gold)',
+          border: '2px solid var(--near-black)',
+          animation: 'badgePulse 2s ease-in-out infinite',
+        }} />
+      )}
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ color: 'var(--gold)' }}>
         {icon}
       </svg>

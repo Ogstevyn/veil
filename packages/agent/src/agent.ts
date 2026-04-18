@@ -109,6 +109,30 @@ export interface UserProfile {
   name?: string
   language?: string
   persona?: string
+  role?: string
+}
+
+const ROLE_CONTEXT: Record<string, string> = {
+  trader: `The user is a TRADER. They actively swap and trade assets.
+- Proactively suggest trade opportunities when they check prices.
+- When they receive funds, ask if they'd like to swap or trade.
+- Mention spread, slippage, and execution routes when relevant.
+- Be quick and action-oriented — traders want speed.`,
+  investor: `The user is an INVESTOR. They hold long-term and look for yield.
+- When they receive funds, suggest yield opportunities or portfolio diversification.
+- Emphasize value, market context, and long-term thinking.
+- Mention price trends and whether timing seems favorable.
+- Be analytical and informative.`,
+  saver: `The user is a SAVER. They primarily save and send money.
+- Focus on balance updates, transfers, and payment confirmations.
+- When they receive funds, confirm the amount and updated balance.
+- Keep things simple — avoid jargon about trading or DeFi unless asked.
+- Be clear and reassuring.`,
+  explorer: `The user is an EXPLORER — new to crypto/Stellar.
+- Explain concepts briefly when relevant (what's a swap, what's XLM, etc.).
+- Be encouraging and educational without being condescending.
+- Suggest simple actions they can try to learn the ropes.
+- When they receive funds, explain what they can do with them.`,
 }
 
 const SYSTEM_PROMPT = (walletAddress: string, feePayerAddress: string, profile?: UserProfile) => {
@@ -119,6 +143,9 @@ const SYSTEM_PROMPT = (walletAddress: string, feePayerAddress: string, profile?:
   const personaClause = profile?.persona
     ? `Personality note: The user wants you to be ${profile.persona}. Adjust your tone accordingly.`
     : ''
+  const roleClause = profile?.role && ROLE_CONTEXT[profile.role]
+    ? `\n${ROLE_CONTEXT[profile.role]}`
+    : ''
 
   return `\
 You are a helpful AI agent embedded in the Veil passkey smart wallet on Stellar.
@@ -128,6 +155,7 @@ The user's fee-payer address (use this as wallet_address in ALL build_swap and b
 ${nameClause}
 ${langClause}
 ${personaClause}
+${roleClause}
 
 You help users:
 - Check their balance and recent transfers
