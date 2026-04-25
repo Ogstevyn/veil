@@ -11,6 +11,7 @@ const Server = Horizon.Server
 import { TxDetailSheet, type TxRecord } from '@/components/TxDetailSheet'
 import { useInactivityLock } from '@/hooks/useInactivityLock'
 import { deriveStoredFeePayer } from '@/lib/deriveFeePayer'
+import { fetchPrices } from '@/lib/fetchPrice'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ export default function DashboardPage() {
   const [selectedTx, setSelectedTx]       = useState<TxRecord | null>(null)
   const [txFilter, setTxFilter]           = useState<'all' | 'transfers' | 'swaps'>('all')
   const [loading, setLoading]             = useState(true)
+  const [prices, setPrices]               = useState<Record<string, number | null>>({})
   const [isFunding, setIsFunding]         = useState(false)
   const [fundingError, setFundingError]   = useState<string | null>(null)
   const [copied, setCopied]               = useState(false)
@@ -267,6 +269,18 @@ export default function DashboardPage() {
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [fetchData])
 
+  // Fetch live USDC prices from Lens after balances load.
+  // Runs in the background — does not block balance rendering and does not
+  // interact with the inactivity lock (no user-activity signals are emitted).
+  useEffect(() => {
+    if (assets.length === 0) return
+    let cancelled = false
+    fetchPrices(assets.map(a => ({ code: a.code, issuer: a.issuer }))).then(result => {
+      if (!cancelled) setPrices(result)
+    })
+    return () => { cancelled = true }
+  }, [assets])
+
   const xlmBalance = assets.find(a => a.code === 'XLM')?.balance ?? null
 
   const handleFund = async () => {
@@ -496,6 +510,11 @@ export default function DashboardPage() {
                 const tokenHref = asset.issuer
                   ? `/token/${asset.code}?issuer=${asset.issuer}`
                   : `/token/${asset.code}`
+                const priceKey = asset.issuer ? `${asset.code}:${asset.issuer}` : asset.code
+                const unitPrice = prices[priceKey] ?? null
+                const usdValue  = unitPrice != null
+                  ? (parseFloat(asset.balance) * unitPrice).toFixed(2)
+                  : null
                 return (
                   <button
                     key={`${asset.code}-${asset.issuer ?? 'native'}`}
@@ -522,7 +541,7 @@ export default function DashboardPage() {
                         {parseFloat(asset.balance).toFixed(2)}
                       </p>
                       <p style={{ fontSize: '0.6875rem', color: 'rgba(246,247,248,0.35)', marginTop: '0.125rem' }}>
-                        {asset.code}
+                        {usdValue != null ? `${asset.code} · $${usdValue}` : asset.code}
                       </p>
                     </div>
                   </button>
